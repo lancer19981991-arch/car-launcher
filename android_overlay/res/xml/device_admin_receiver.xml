@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Минимальный набор политик для Device Owner киоск-режима.
+     Ничего не ужесточаем сверх необходимого (нет требований к паролю,
+     шифрованию и т.п. — только то, что нужно для lock task mode). -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <limit-password />
+    </uses-policies>
+</device-admin>

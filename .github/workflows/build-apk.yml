@@ -1,0 +1,73 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      # Генерируем чистый Android-скаффолд прямо тут, на раннере GitHub —
+      # так Gradle-файлы (build.gradle, settings.gradle, gradle-wrapper)
+      # всегда соответствуют версии Flutter, которая реально ставится
+      # этим шагом, а не версии, под которую я писал этот workflow заранее.
+      #
+      # org=com.carlauncher + project-name=app => applicationId/package
+      # com.carlauncher.app — это ровно тот пакет, под который написаны
+      # файлы в android_overlay/kotlin/com/carlauncher/app/.
+      - name: Generate base Flutter project
+        run: flutter create --platforms android --org com.carlauncher --project-name app build_output
+
+      - name: Overlay custom Dart source (lib/)
+        run: |
+          rm -rf build_output/lib
+          cp -r lib build_output/lib
+
+      - name: Overlay custom Android source
+        run: |
+          mkdir -p build_output/android/app/src/main/kotlin/com/carlauncher/app
+          cp android_overlay/kotlin/com/carlauncher/app/*.kt \
+             build_output/android/app/src/main/kotlin/com/carlauncher/app/
+          cp android_overlay/AndroidManifest.xml \
+             build_output/android/app/src/main/AndroidManifest.xml
+          mkdir -p build_output/android/app/src/main/res/xml
+          cp android_overlay/res/xml/device_admin_receiver.xml \
+             build_output/android/app/src/main/res/xml/device_admin_receiver.xml
+
+      - name: Patch pubspec.yaml and Gradle dependencies
+        run: python3 scripts/patch_project.py build_output
+
+      - name: flutter pub get
+        working-directory: build_output
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: build_output
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: car-launcher-apk
+          path: build_output/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error

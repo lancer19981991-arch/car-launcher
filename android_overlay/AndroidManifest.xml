@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Это финальный манифест лаунчера. Он заменяет собой тот,
+    что сгенерирует `flutter create` — см. README, шаг 2.
+
+    Сознательно НЕТ: android:sharedUserId="android.uid.system" и
+    системных permission (WRITE_SETTINGS, FORCE_STOP_PACKAGES и т.п.) —
+    такие права даёт только подпись платформенным ключом устройства,
+    которого у обычного разработчика нет и быть не может.
+    Вместо этого "автозапуск" и "киоск" сделаны официальными способами:
+    роль лаунчера по умолчанию (HOME) + опционально Device Owner.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Нужно только для необязательного переприменения киоск-режима
+         после перезагрузки (см. BootReceiver). Для самого автозапуска
+         лаунчера это разрешение не требуется — Android сам открывает
+         домашний экран после загрузки. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:label="Car Launcher"
+        android:name=".CarLauncherApplication"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:theme="@style/LaunchTheme">
+
+        <!-- resizeableActivity нужен обеим Activity, иначе Jetpack Activity
+             Embedding не станет их сплитовать, даже при наличии extensions
+             на устройстве. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="landscape"
+            android:resizeableActivity="true"
+            android:stateNotNeeded="true"
+            android:excludeFromRecents="false">
+
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+
+            <!-- Обычный запуск (из списка приложений / при сборке). -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Регистрация как "домашний экран" (HOME).
+                 Именно это заставляет Android открывать приложение
+                 после загрузки устройства и по кнопке "Домой" —
+                 без каких-либо дополнительных разрешений. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Вторая панель лаунчера — медиаплеер. Запускается только
+             изнутри приложения (exported=false), а не как отдельная
+             точка входа. Видна рядом с MainActivity только там, где
+             доступны androidx.window.extensions — см. README. -->
+        <activity
+            android:name=".MediaPaneActivity"
+            android:exported="false"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:screenOrientation="landscape"
+            android:resizeableActivity="true">
+
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+        </activity>
+
+        <!-- Опционально: переприменяет параметры киоск-режима после
+             перезагрузки, если приложение зарегистрировано как Device Owner.
+             Ничего не делает и не требует прав для обычного (не-owner)
+             режима работы. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Device Admin / Device Owner receiver — используется только
+             если вы осознанно включаете киоск-режим (README, раздел
+             "Device Owner"). Для обычной работы лаунчера не обязателен. -->
+        <receiver
+            android:name=".DeviceOwnerReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_receiver" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <!-- Начиная с Android 11 (API 30) видимость других пакетов ограничена.
+         Это нужно, если решите реально запускать установленные приложения
+         из пресетов (PackageManager.getLaunchIntentForPackage). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+</manifest>

@@ -1,0 +1,8 @@
+# Сгенерированный Flutter/Android-скаффолд — создаётся заново на каждом
+# запуске workflow (см. .github/workflows/build-apk.yml), в репозитории
+# не хранится.
+/build_output/
+
+.DS_Store
+__pycache__/
+*.pyc

@@ -53,6 +53,9 @@ def main() -> None:
     print(f"pubspec.yaml: добавлены {len(extra_lines)} строк зависимостей")
 
     # ---- 2. android/app/build.gradle(.kts): добавить androidx.window ----
+    # Синтаксис `implementation("…")` одинаково валиден и в Groovy
+    # (build.gradle), и в Kotlin DSL (build.gradle.kts), поэтому правим
+    # оба формата одной и той же вставляемой строкой.
     patched = False
     for name in ("build.gradle.kts", "build.gradle"):
         gradle_path = target / "android" / "app" / name
@@ -66,9 +69,21 @@ def main() -> None:
             count=1,
         )
         if count == 0:
-            fail(f"не нашёл блок 'dependencies {{' в {gradle_path}")
+            # Современные минимальные шаблоны flutter create иногда вообще
+            # не содержат явного блока dependencies {} в app-level
+            # build.gradle — Flutter Gradle Plugin сам подключает всё
+            # нужное. В этом случае просто дописываем свой блок в конец
+            # файла: отдельный top-level блок dependencies {} валиден
+            # и в Groovy, и в Kotlin DSL независимо от остального файла.
+            new_content = content.rstrip("\n") + (
+                '\n\ndependencies {\n'
+                '    implementation("androidx.window:window:1.3.0")\n'
+                '}\n'
+            )
+            print(f"{name}: блока 'dependencies {{' не было — добавлен новый в конец файла")
+        else:
+            print(f"{name}: добавлена зависимость androidx.window:window:1.3.0")
         gradle_path.write_text(new_content, encoding="utf-8")
-        print(f"{name}: добавлена зависимость androidx.window:window:1.3.0")
         patched = True
         break
 

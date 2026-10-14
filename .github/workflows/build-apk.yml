@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # нужно для создания GitHub Release с прикреплённым APK
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,3 +73,19 @@ jobs:
           name: car-launcher-apk
           path: build_output/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      # Артефакты Actions (шаг выше) отдаются через blob.core.windows.net,
+      # который недоступен из некоторых сетевых окружений. Релиз с
+      # прикреплённым файлом отдаётся через github.com — проще скачать
+      # откуда угодно, включая автоматизацию без доступа к тому домену.
+      - name: Publish as GitHub Release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="build-${{ github.run_number }}"
+          apk="build_output/build/app/outputs/flutter-apk/app-release.apk"
+          cp "$apk" "car-launcher-${tag}.apk"
+          gh release create "$tag" "car-launcher-${tag}.apk" \
+            --repo "${{ github.repository }}" \
+            --title "Car Launcher build #${{ github.run_number }}" \
+            --notes "Автоматическая сборка из коммита ${{ github.sha }}."

@@ -363,26 +363,115 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final presets = context.watch<PresetService>();
+    final size = MediaQuery.sizeOf(context);
+    // Вертикальный экран магнитолы: док сверху, окна стопкой.
+    final portrait = size.height >= size.width;
     return Scaffold(
       body: WallpaperBackground(
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildDock(presets),
-                const SizedBox(width: 12),
-                Expanded(child: _buildWindowsArea(presets)),
-              ],
-            ),
+            child: portrait
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildDockHorizontal(presets),
+                      const SizedBox(height: 12),
+                      Expanded(child: _buildWindowsArea(presets, portrait: true)),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildDockVertical(presets),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildWindowsArea(presets, portrait: false)),
+                    ],
+                  ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildDock(PresetService presets) {
+  Widget _dockTile(PresetSlot slot, PresetService presets, {required bool horizontal}) {
+    final theme = Theme.of(context);
+    final pkg = presets.packageFor(slot.id);
+    final label = pkg != null ? (_apps[pkg]?.label ?? slot.hint) : slot.hint;
+    return Tooltip(
+      message: pkg == null ? '$label — нажмите, чтобы выбрать' : label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _onDockTap(slot),
+        onLongPress: () => _showSlotMenu(slot),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: Center(child: _appIcon(slot, presets, 44)),
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: horizontal ? 60 : double.infinity,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelSmall,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsButton() => IconButton.filledTonal(
+        tooltip: 'Настройки',
+        icon: const Icon(Icons.settings_rounded),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+        ),
+      );
+
+  /// Горизонтальный док сверху — для вертикального экрана.
+  Widget _buildDockHorizontal(PresetService presets) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          const DockClock(),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final slot in kPresetSlots) _dockTile(slot, presets, horizontal: true),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _settingsButton(),
+        ],
+      ),
+    );
+  }
+
+  /// Вертикальный док слева — для горизонтального экрана (эмулятор).
+  Widget _buildDockVertical(PresetService presets) {
     final theme = Theme.of(context);
     return Container(
       width: 92,
@@ -400,54 +489,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               padding: const EdgeInsets.symmetric(horizontal: 10),
               itemCount: kPresetSlots.length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final slot = kPresetSlots[index];
-                final pkg = presets.packageFor(slot.id);
-                final label = pkg != null ? (_apps[pkg]?.label ?? slot.hint) : slot.hint;
-                return Tooltip(
-                  message: pkg == null ? '$label — нажмите, чтобы выбрать' : label,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () => _onDockTap(slot),
-                    onLongPress: () => _showSlotMenu(slot),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        children: [
-                          SizedBox(
-                            width: 48,
-                            height: 48,
-                            child: Center(child: _appIcon(slot, presets, 48)),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelSmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
+              itemBuilder: (context, index) =>
+                  _dockTile(kPresetSlots[index], presets, horizontal: false),
             ),
           ),
           const SizedBox(height: 8),
-          IconButton.filledTonal(
-            tooltip: 'Настройки',
-            icon: const Icon(Icons.settings_rounded),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-          ),
+          _settingsButton(),
         ],
       ),
     );
   }
 
-  Widget _buildWindowsArea(PresetService presets) {
+  Widget _buildWindowsArea(PresetService presets, {required bool portrait}) {
     final theme = Theme.of(context);
     final status = _freeform;
     final showFreeformWarning = !_liveMode && status != null && !status.supported;
@@ -530,15 +583,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ],
         const SizedBox(height: 12),
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < kWindowSlots.length; i++) ...[
-                if (i > 0) const SizedBox(width: 12),
-                Expanded(child: _buildWindowSlot(i, presets)),
-              ],
-            ],
-          ),
+          child: portrait
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < kWindowSlots.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 12),
+                      Expanded(child: _buildWindowSlot(i, presets)),
+                    ],
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < kWindowSlots.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 12),
+                      Expanded(child: _buildWindowSlot(i, presets)),
+                    ],
+                  ],
+                ),
         ),
       ],
     );

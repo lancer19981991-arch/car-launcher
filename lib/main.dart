@@ -8,11 +8,12 @@ import 'services/settings_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Лаунчер живёт в альбомной ориентации и без системных жестов сверху —
-  // типично для магнитолы/приборной панели. Уберите при необходимости.
+  // Экран магнитолы вертикальный («тесла»-формат), поэтому закрепляем
+  // портретную ориентацию. Раскладка на главном экране всё равно
+  // адаптивная и переживёт поворот, но на фиксированном экране так
+  // предсказуемее.
   await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
+    DeviceOrientation.portraitUp,
   ]);
 
   final settings = await SettingsService.load();

@@ -20,15 +20,11 @@
 
     <application
         android:label="Car Launcher"
-        android:name=".CarLauncherApplication"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:supportsRtl="true"
         android:theme="@style/LaunchTheme">
 
-        <!-- resizeableActivity нужен обеим Activity, иначе Jetpack Activity
-             Embedding не станет их сплитовать, даже при наличии extensions
-             на устройстве. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -61,24 +57,6 @@
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-        </activity>
-
-        <!-- Вторая панель лаунчера — медиаплеер. Запускается только
-             изнутри приложения (exported=false), а не как отдельная
-             точка входа. Видна рядом с MainActivity только там, где
-             доступны androidx.window.extensions — см. README. -->
-        <activity
-            android:name=".MediaPaneActivity"
-            android:exported="false"
-            android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:hardwareAccelerated="true"
-            android:screenOrientation="landscape"
-            android:resizeableActivity="true">
-
-            <meta-data
-                android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme" />
         </activity>
 
         <!-- Опционально: переприменяет параметры киоск-режима после

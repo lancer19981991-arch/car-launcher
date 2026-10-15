@@ -1,32 +1,33 @@
 package com.carlauncher.app
 
+import android.app.ActivityOptions
 import android.app.admin.DevicePolicyManager
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.View
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 
 /**
- * Главная (левая) панель лаунчера. Кроме стандартного запуска Flutter,
+ * Единственная Activity лаунчера. Кроме стандартного запуска Flutter,
  * отвечает на вызовы из Dart (канал "car_launcher/native") за всё,
  * что требует настоящих системных API: роль лаунчера по умолчанию,
- * киоск-режим (lock task) и открытие второй панели (медиаплеера).
+ * киоск-режим (lock task), список приложений и запуск приложений
+ * в свободных окнах с заданными координатами.
  *
  * Здесь намеренно нет работы с android.uid.system/WRITE_SETTINGS и т.п. —
  * такие права даёт только подпись платформенным ключом устройства.
@@ -36,29 +37,6 @@ import java.util.concurrent.Executors
 class MainActivity : FlutterActivity() {
 
     private val channelName = "car_launcher/native"
-
-    // Движок берётся из общей FlutterEngineGroup приложения — см.
-    // CarLauncherApplication и README, раздел "Activity Embedding".
-    override fun provideFlutterEngine(context: Context): FlutterEngine {
-        val app = applicationContext as CarLauncherApplication
-        return app.engineGroup.createAndRunEngine(context, DartExecutor.DartEntrypoint.createDefault())
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // Сразу открываем вторую панель (медиаплеер). Если на устройстве
-        // есть androidx.window.extensions — система покажет её рядом
-        // (Activity Embedding, правило в CarLauncherApplication). Если нет —
-        // она просто откроется поверх как обычный полноэкранный экран,
-        // и пользователь сможет вернуться назад кнопкой "Домой"/"Назад".
-        if (savedInstanceState == null) {
-            openMediaPane()
-        }
-    }
-
-    private fun openMediaPane() {
-        startActivity(Intent(this, MediaPaneActivity::class.java))
-    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -77,9 +55,21 @@ class MainActivity : FlutterActivity() {
                         stopKioskMode()
                         result.success(null)
                     }
-                    "openMediaPane" -> {
-                        openMediaPane()
-                        result.success(null)
+                    "getFreeformStatus" -> result.success(freeformStatus())
+                    "openDeveloperSettings" -> {
+                        result.success(openDeveloperSettings())
+                    }
+                    "launchAppInBounds" -> {
+                        val pkg = call.argument<String>("packageName")
+                        val left = call.argument<Int>("left")
+                        val top = call.argument<Int>("top")
+                        val right = call.argument<Int>("right")
+                        val bottom = call.argument<Int>("bottom")
+                        if (pkg == null || left == null || top == null || right == null || bottom == null) {
+                            result.error("BAD_ARGS", "packageName и границы окна обязательны", null)
+                        } else {
+                            result.success(launchAppInBounds(pkg, Rect(left, top, right, bottom)))
+                        }
                     }
                     "getInstalledApps" -> {
                         // Чтение иконок может занять заметное время на
@@ -151,6 +141,76 @@ class MainActivity : FlutterActivity() {
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         bitmap.recycle()
         return out.toByteArray()
+    }
+
+    /**
+     * Запуск приложения в свободном окне с заданными границами.
+     *
+     * Границы приходят из Flutter в физических пикселях относительно
+     * области лаунчера; сдвигаем их на положение этой области на экране.
+     *
+     * ActivityOptions.setLaunchBounds — публичный API: если устройство
+     * поддерживает свободные окна (freeform), система откроет приложение
+     * окном ровно в этих границах. Если не поддерживает — приложение
+     * просто откроется на весь экран. Ничего сверх этого обычное
+     * (не системное) приложение сделать не может.
+     */
+    private fun launchAppInBounds(pkg: String, bounds: Rect): Boolean {
+        val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        val origin = IntArray(2)
+        findViewById<View>(android.R.id.content)?.getLocationOnScreen(origin)
+        val screenBounds = Rect(bounds).apply { offset(origin[0], origin[1]) }
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val options = ActivityOptions.makeBasic().setLaunchBounds(screenBounds)
+                startActivity(intent, options.toBundle())
+            } else {
+                startActivity(intent)
+            }
+            true
+        } catch (e: ActivityNotFoundException) {
+            false
+        } catch (e: SecurityException) {
+            false
+        }
+    }
+
+    /**
+     * Поддерживает ли устройство свободные окна. Значения настроек на
+     * новых Android могут быть недоступны обычному приложению — тогда
+     * в ответе null («неизвестно»), а не ошибка.
+     */
+    private fun freeformStatus(): Map<String, Any?> {
+        val feature = packageManager.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)
+        val setting = readGlobalFlag("enable_freeform_support")
+        val forceResizable = readGlobalFlag("force_resizable_activities")
+        return mapOf(
+            "supported" to (feature || setting == true),
+            "systemFeature" to feature,
+            "developerSetting" to setting,
+            "forceResizable" to forceResizable,
+            "sdk" to Build.VERSION.SDK_INT,
+        )
+    }
+
+    private fun readGlobalFlag(key: String): Boolean? = try {
+        Settings.Global.getInt(contentResolver, key, 0) != 0
+    } catch (e: SecurityException) {
+        null
+    }
+
+    /** Экран «Для разработчиков», где включаются свободные окна. */
+    private fun openDeveloperSettings(): Boolean = try {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        true
+    } catch (e: ActivityNotFoundException) {
+        false
     }
 
     /** Запуск приложения по имени пакета. false — если приложение

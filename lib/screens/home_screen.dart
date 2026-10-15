@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_info.dart';
+import '../models/freeform_status.dart';
 import '../models/preset.dart';
 import '../services/native_bridge.dart';
 import '../services/preset_service.dart';
-import '../widgets/clock_widget.dart';
-import '../widgets/preset_grid.dart';
+import '../widgets/dock_clock.dart';
 import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
 import 'settings_screen.dart';
 
+/// Главный экран: слева док с часами и ярлыками, справа три области,
+/// в каждой из которых открывается своё приложение свободным окном.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -19,16 +21,25 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  /// Установленные приложения по имени пакета — нужны, чтобы показать
-  /// на плитке настоящую иконку и название назначенного приложения.
+  /// Установленные приложения по имени пакета — для иконок и названий.
   Map<String, AppInfo> _apps = const {};
   bool _appsLoaded = false;
+
+  FreeformStatus? _freeform;
+
+  /// Ключи областей окон — по ним считаются координаты для запуска.
+  final List<GlobalKey> _windowKeys = List.generate(kWindowSlots.length, (_) => GlobalKey());
+
+  /// Раскладывать окна автоматически только один раз за запуск лаунчера,
+  /// а не при каждом возвращении на домашний экран.
+  static bool _autoLayoutDone = false;
+  bool _layingOut = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadApps();
+    _init();
   }
 
   @override
@@ -37,12 +48,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // Возврат на домашний экран из другого приложения — хороший момент
-  // обновить список: пока пользователь был там, что-то могли установить
-  // или удалить.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _loadApps();
+    if (state == AppLifecycleState.resumed) {
+      _loadApps();
+      _loadFreeformStatus();
+    }
+  }
+
+  Future<void> _init() async {
+    await Future.wait([_loadApps(), _loadFreeformStatus()]);
+    if (!mounted || _autoLayoutDone) return;
+    _autoLayoutDone = true;
+    // Без поддержки свободных окна три приложения открылись бы на весь
+    // экран друг поверх друга — автоматически это делать нельзя.
+    if (_freeform?.supported != true) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _layoutAllWindows());
   }
 
   Future<void> _loadApps() async {
@@ -58,12 +79,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadFreeformStatus() async {
+    try {
+      final status = await NativeBridge.getFreeformStatus();
+      if (mounted) setState(() => _freeform = status);
+    } catch (_) {
+      // Статус останется неизвестным — баннер покажет предупреждение.
+    }
+  }
+
+  // ---------- назначение приложений ----------
+
   Future<void> _pickApp(PresetSlot slot) async {
     final presets = context.read<PresetService>();
     final app = await Navigator.of(context).push<AppInfo>(
-      MaterialPageRoute(
-        builder: (_) => AppPickerScreen(title: 'Пресет «${slot.hint}»'),
-      ),
+      MaterialPageRoute(builder: (_) => AppPickerScreen(title: '«${slot.hint}»: выбор приложения')),
     );
     if (app == null) return;
     await presets.assign(slot.id, app.packageName);
@@ -71,21 +101,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _apps = {..._apps, app.packageName: app});
   }
 
-  Future<void> _onTap(PresetSlot slot) async {
-    final pkg = context.read<PresetService>().packageFor(slot.id);
-    if (pkg == null) {
-      await _pickApp(slot);
-      return;
-    }
-    final launched = await NativeBridge.launchApp(pkg);
-    if (launched || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Приложение не найдено — выберите другое')),
-    );
-    await _pickApp(slot);
-  }
-
-  void _onLongPress(PresetSlot slot) {
+  void _showSlotMenu(PresetSlot slot, {VoidCallback? onOpen}) {
     final presets = context.read<PresetService>();
     final assigned = presets.packageFor(slot.id) != null;
     showModalBottomSheet<void>(
@@ -94,6 +110,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (assigned && onOpen != null)
+              ListTile(
+                leading: const Icon(Icons.open_in_new_rounded),
+                title: const Text('Открыть в окне'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  onOpen();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.apps_rounded),
               title: Text(assigned ? 'Выбрать другое приложение' : 'Выбрать приложение'),
@@ -105,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             if (assigned)
               ListTile(
                 leading: const Icon(Icons.clear_rounded),
-                title: const Text('Очистить пресет'),
+                title: const Text('Очистить'),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   presets.clear(slot.id);
@@ -117,89 +142,356 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  PresetTileData _tileFor(PresetSlot slot, PresetService presets, ThemeData theme) {
+  void _appMissing() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Приложение не найдено — выберите другое')),
+    );
+  }
+
+  // ---------- док ----------
+
+  Future<void> _onDockTap(PresetSlot slot) async {
+    final pkg = context.read<PresetService>().packageFor(slot.id);
+    if (pkg == null) return _pickApp(slot);
+    final launched = await NativeBridge.launchApp(pkg);
+    if (launched || !mounted) return;
+    _appMissing();
+    await _pickApp(slot);
+  }
+
+  // ---------- окна ----------
+
+  /// Границы области окна в физических пикселях экрана лаунчера.
+  Rect? _windowBoundsPx(int index) {
+    final box = _windowKeys[index].currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final topLeft = box.localToGlobal(Offset.zero);
+    return Rect.fromLTWH(
+      topLeft.dx * dpr,
+      topLeft.dy * dpr,
+      box.size.width * dpr,
+      box.size.height * dpr,
+    );
+  }
+
+  /// true — окно открыто (или слот пуст и открывать нечего).
+  Future<bool> _openWindow(int index, {bool pickIfEmpty = true}) async {
+    final slot = kWindowSlots[index];
+    final pkg = context.read<PresetService>().packageFor(slot.id);
+    if (pkg == null) {
+      if (pickIfEmpty) await _pickApp(slot);
+      return true;
+    }
+    final bounds = _windowBoundsPx(index);
+    if (bounds == null) return false;
+    final ok = await NativeBridge.launchAppInBounds(pkg, bounds);
+    if (!ok && mounted && pickIfEmpty) {
+      _appMissing();
+      await _pickApp(slot);
+    }
+    return ok;
+  }
+
+  Future<void> _layoutAllWindows() async {
+    if (_layingOut) return;
+    final presets = context.read<PresetService>();
+    final anyAssigned = kWindowSlots.any((s) => presets.packageFor(s.id) != null);
+    if (!anyAssigned) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сначала назначьте приложения окнам — нажмите на окно')),
+      );
+      return;
+    }
+    setState(() => _layingOut = true);
+    try {
+      for (var i = 0; i < kWindowSlots.length; i++) {
+        if (!mounted) return;
+        await _openWindow(i, pickIfEmpty: false);
+        // Небольшая пауза: система успевает создать окно до следующего запуска.
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    } finally {
+      if (mounted) setState(() => _layingOut = false);
+    }
+  }
+
+  void _showFreeformHelp() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Как включить свободные окна'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Без свободных окон приложения открываются на весь экран, '
+            'а не в своих областях.\n\n'
+            '1. Настройки → О системе (Об устройстве) → 7 раз нажмите '
+            '«Номер сборки», чтобы включить режим разработчика.\n'
+            '2. Настройки → Для разработчиков:\n'
+            '   • включите «Окна произвольной формы» '
+            '(Enable freeform windows);\n'
+            '   • включите «Изменение размера в многооконном режиме» '
+            '(Force activities to be resizable) — иначе часть приложений '
+            'всё равно откроется на весь экран.\n'
+            '3. Перезагрузите магнитолу.\n\n'
+            'На некоторых прошивках этих пунктов нет — значит, прошивка '
+            'не поддерживает свободные окна, и обычное приложение это не исправит.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Закрыть'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              final opened = await NativeBridge.openDeveloperSettings();
+              if (!opened && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Раздел «Для разработчиков» недоступен — сначала выполните шаг 1'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Открыть настройки'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------- построение ----------
+
+  Widget _appIcon(PresetSlot slot, PresetService presets, double size) {
     final pkg = presets.packageFor(slot.id);
     final app = pkg == null ? null : _apps[pkg];
-
     if (app != null) {
-      return PresetTileData(
-        title: app.label,
-        icon: Image.memory(app.icon, width: 40, height: 40, gaplessPlayback: true),
-        onTap: () => _onTap(slot),
-        onLongPress: () => _onLongPress(slot),
-      );
+      return Image.memory(app.icon, width: size, height: size, gaplessPlayback: true);
     }
+    return Icon(slot.icon, size: size * 0.6, color: Theme.of(context).colorScheme.primary);
+  }
 
-    final String? subtitle;
-    if (pkg == null) {
-      subtitle = 'Нажмите, чтобы выбрать';
-    } else if (_appsLoaded) {
-      subtitle = 'Приложение удалено';
-    } else {
-      subtitle = null; // список ещё грузится
-    }
-
-    return PresetTileData(
-      title: slot.hint,
-      subtitle: subtitle,
-      icon: Icon(slot.icon, size: 28, color: theme.colorScheme.primary),
-      onTap: () => _onTap(slot),
-      onLongPress: () => _onLongPress(slot),
-    );
+  String? _missingNote(PresetSlot slot, PresetService presets) {
+    final pkg = presets.packageFor(slot.id);
+    if (pkg != null && _appsLoaded && !_apps.containsKey(pkg)) return 'Приложение удалено';
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     final presets = context.watch<PresetService>();
-    final theme = Theme.of(context);
-    final tiles = [for (final slot in kPresetSlots) _tileFor(slot, presets, theme)];
-
     return Scaffold(
       body: WallpaperBackground(
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Expanded(child: ClockWidget()),
-                    // Медиаплеер живёт в соседней панели (MediaPaneActivity).
-                    // Она открывается автоматически при старте; эта кнопка —
-                    // способ вернуть её, если пользователь её закрыл.
-                    IconButton.filledTonal(
-                      iconSize: 26,
-                      icon: const Icon(Icons.graphic_eq_rounded),
-                      onPressed: NativeBridge.openMediaPane,
-                    ),
-                    const SizedBox(width: 12),
-                    IconButton.filledTonal(
-                      iconSize: 26,
-                      icon: const Icon(Icons.settings_rounded),
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Text('Пресеты', style: theme.textTheme.titleMedium),
-                Text(
-                  'Удерживайте пресет, чтобы сменить приложение',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: PresetGrid(tiles: tiles),
-                  ),
-                ),
+                _buildDock(presets),
+                const SizedBox(width: 12),
+                Expanded(child: _buildWindowsArea(presets)),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDock(PresetService presets) {
+    final theme = Theme.of(context);
+    return Container(
+      width: 92,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        children: [
+          const DockClock(),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              itemCount: kPresetSlots.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final slot = kPresetSlots[index];
+                final pkg = presets.packageFor(slot.id);
+                final label = pkg != null ? (_apps[pkg]?.label ?? slot.hint) : slot.hint;
+                return Tooltip(
+                  message: pkg == null ? '$label — нажмите, чтобы выбрать' : label,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => _onDockTap(slot),
+                    onLongPress: () => _showSlotMenu(slot),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Center(child: _appIcon(slot, presets, 48)),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          IconButton.filledTonal(
+            tooltip: 'Настройки',
+            icon: const Icon(Icons.settings_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWindowsArea(PresetService presets) {
+    final theme = Theme.of(context);
+    final status = _freeform;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Нажмите на окно, чтобы открыть приложение. Удерживайте, чтобы сменить.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            FilledButton.icon(
+              onPressed: _layingOut ? null : _layoutAllWindows,
+              icon: _layingOut
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.dashboard_rounded),
+              label: const Text('Разложить окна'),
+            ),
+          ],
+        ),
+        if (status != null && !status.supported) ...[
+          const SizedBox(height: 8),
+          Card(
+            color: theme.colorScheme.errorContainer,
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.onErrorContainer),
+              title: Text(
+                'Свободные окна на этом устройстве выключены',
+                style: TextStyle(color: theme.colorScheme.onErrorContainer),
+              ),
+              subtitle: Text(
+                'Приложения будут открываться на весь экран, а не в своих окнах.',
+                style: TextStyle(color: theme.colorScheme.onErrorContainer),
+              ),
+              trailing: TextButton(
+                onPressed: _showFreeformHelp,
+                child: const Text('Как включить'),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < kWindowSlots.length; i++) ...[
+                if (i > 0) const SizedBox(width: 12),
+                Expanded(child: _buildWindowSlot(i, presets)),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWindowSlot(int index, PresetService presets) {
+    final theme = Theme.of(context);
+    final slot = kWindowSlots[index];
+    final pkg = presets.packageFor(slot.id);
+    final app = pkg == null ? null : _apps[pkg];
+    final missing = _missingNote(slot, presets);
+
+    final String title;
+    final String subtitle;
+    if (pkg == null) {
+      title = slot.hint;
+      subtitle = 'Нажмите, чтобы выбрать приложение';
+    } else if (missing != null) {
+      title = slot.hint;
+      subtitle = missing;
+    } else {
+      title = app?.label ?? slot.hint;
+      subtitle = 'Нажмите, чтобы открыть в окне';
+    }
+
+    return Card(
+      key: _windowKeys[index],
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openWindow(index),
+        onLongPress: () => _showSlotMenu(slot, onOpen: () => _openWindow(index)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 72,
+                height: 72,
+                child: Center(
+                  child: pkg == null
+                      ? Icon(Icons.add_rounded, size: 48, color: theme.colorScheme.primary)
+                      : _appIcon(slot, presets, 72),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
           ),
         ),
       ),

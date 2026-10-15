@@ -19,6 +19,15 @@ class PresetSlot {
   final IconData icon;
 }
 
+/// Три окна на главном экране — в каждом своё приложение,
+/// открытое свободным окном поверх этой области.
+const List<PresetSlot> kWindowSlots = [
+  PresetSlot(id: 'window_1', hint: 'Окно 1', icon: Icons.web_asset_rounded),
+  PresetSlot(id: 'window_2', hint: 'Окно 2', icon: Icons.web_asset_rounded),
+  PresetSlot(id: 'window_3', hint: 'Окно 3', icon: Icons.web_asset_rounded),
+];
+
+/// Ярлыки в доке слева.
 const List<PresetSlot> kPresetSlots = [
   PresetSlot(id: 'nav', hint: 'Навигация', icon: Icons.navigation_rounded),
   PresetSlot(id: 'music', hint: 'Музыка', icon: Icons.library_music_rounded),

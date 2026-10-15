@@ -1,6 +1,9 @@
+import 'dart:ui' show Rect;
+
 import 'package:flutter/services.dart';
 
 import '../models/app_info.dart';
+import '../models/freeform_status.dart';
 
 /// Канал связи с нативной (Kotlin) стороной — android/.../MainActivity.kt.
 ///
@@ -43,12 +46,30 @@ class NativeBridge {
     await _channel.invokeMethod('stopKioskMode');
   }
 
-  /// Открыть вторую панель (медиаплеер, MediaPaneActivity). Если на
-  /// устройстве доступен Jetpack Activity Embedding, система покажет
-  /// её рядом с главным экраном; иначе — как обычный полноэкранный
-  /// экран поверх (см. README, раздел "Activity Embedding").
-  static Future<void> openMediaPane() async {
-    await _channel.invokeMethod('openMediaPane');
+  /// Открыть приложение свободным окном в границах [boundsPx] —
+  /// в физических пикселях относительно экрана лаунчера. Если устройство
+  /// не поддерживает свободные окна, приложение откроется на весь экран.
+  static Future<bool> launchAppInBounds(String packageName, Rect boundsPx) async {
+    final ok = await _channel.invokeMethod<bool>('launchAppInBounds', {
+      'packageName': packageName,
+      'left': boundsPx.left.round(),
+      'top': boundsPx.top.round(),
+      'right': boundsPx.right.round(),
+      'bottom': boundsPx.bottom.round(),
+    });
+    return ok ?? false;
+  }
+
+  static Future<FreeformStatus> getFreeformStatus() async {
+    final raw = await _channel.invokeMapMethod<Object?, Object?>('getFreeformStatus');
+    return FreeformStatus.fromMap(raw ?? const {});
+  }
+
+  /// Открыть «Для разработчиков». false — если экран недоступен
+  /// (режим разработчика ещё не включён).
+  static Future<bool> openDeveloperSettings() async {
+    final ok = await _channel.invokeMethod<bool>('openDeveloperSettings');
+    return ok ?? false;
   }
 
   /// Все установленные приложения со значком в списке приложений

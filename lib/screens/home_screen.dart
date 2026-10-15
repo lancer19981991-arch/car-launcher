@@ -318,6 +318,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     context.watch<PresetService>();
     final settings = context.watch<SettingsService>();
+    final theme = Theme.of(context);
     final size = MediaQuery.sizeOf(context);
     final portrait = size.height >= size.width;
 

@@ -43,20 +43,33 @@ class AppWindowHost(private val activity: Activity) {
         var started: Boolean = false,
     )
 
+    /** Последняя ошибка встраивания — для диагностики на экране. */
+    var lastError: String? = null
+        private set
+
     private val activityViewClass: Class<*>? = try {
         Class.forName("android.app.ActivityView")
     } catch (e: Throwable) {
+        lastError = "ActivityView не найден: $e"
         null
     }
 
-    /** Доступно ли встраивание живых окон на этом устройстве/подписи. */
-    fun isAvailable(): Boolean = activityViewClass != null && isSystemApp()
+    /** Найден ли класс ActivityView на этой прошивке. */
+    fun activityViewAvailable(): Boolean = activityViewClass != null
 
-    /** Приложение установлено как системное (есть флаг FLAG_SYSTEM). */
-    fun isSystemApp(): Boolean {
-        val flags = activity.applicationInfo.flags
-        return (flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-    }
+    /**
+     * Работает ли процесс под системным UID (1000). Именно это — а не
+     * флаг FLAG_SYSTEM (он только у приложений из раздела /system) —
+     * признак того, что sharedUserId=android.uid.system сработал и у нас
+     * есть системные права для встраивания живых окон.
+     */
+    fun hasSystemUid(): Boolean =
+        android.os.Process.myUid() == android.os.Process.SYSTEM_UID
+
+    fun currentUid(): Int = android.os.Process.myUid()
+
+    /** Доступно ли встраивание живых окон на этом устройстве/подписи. */
+    fun isAvailable(): Boolean = activityViewClass != null && hasSystemUid()
 
     private fun ensureOverlay(): FrameLayout {
         overlay?.let { return it }
@@ -125,6 +138,7 @@ class AppWindowHost(private val activity: Activity) {
                 .newInstance(activity) as View
         } catch (e: Throwable) {
             // Нет подходящего конструктора — встраивание недоступно.
+            lastError = "Конструктор ActivityView: $e"
             return
         }
 
@@ -154,10 +168,12 @@ class AppWindowHost(private val activity: Activity) {
             m.invoke(entry.view, intent)
             true
         } catch (e: Throwable) {
+            lastError = "startActivity в окне (попытка $attempt): ${e.cause ?: e}"
             false
         }
         if (ok) {
             entry.started = true
+            lastError = null
         } else if (attempt < 5) {
             // Виртуальный дисплей ещё не готов — повторим.
             handler.postDelayed({ startInto(entry, attempt + 1) }, 250L)

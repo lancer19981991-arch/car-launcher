@@ -67,7 +67,10 @@ class MainActivity : FlutterActivity() {
                     "liveWindowsAvailable" -> result.success(
                         mapOf(
                             "available" to appWindowHost.isAvailable(),
-                            "systemApp" to appWindowHost.isSystemApp(),
+                            "systemUid" to appWindowHost.hasSystemUid(),
+                            "uid" to appWindowHost.currentUid(),
+                            "activityViewFound" to appWindowHost.activityViewAvailable(),
+                            "lastError" to appWindowHost.lastError,
                         ),
                     )
                     "syncAppWindows" -> {

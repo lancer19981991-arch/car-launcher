@@ -489,6 +489,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
           ],
         ),
+        if (_live != null && (!_live!.available || _live!.lastError != null)) ...[
+          const SizedBox(height: 8),
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.info_outline_rounded),
+              title: Text(
+                _live!.available
+                    ? 'Живые окна: системный режим активен, но есть ошибка'
+                    : 'Живые окна недоступны — работает запасной режим',
+                style: theme.textTheme.bodySmall,
+              ),
+              subtitle: Text(_live!.diagnostics, style: theme.textTheme.labelSmall),
+            ),
+          ),
+        ],
         if (showFreeformWarning) ...[
           const SizedBox(height: 8),
           Card(

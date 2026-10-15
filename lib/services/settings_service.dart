@@ -16,6 +16,24 @@ class SettingsService extends ChangeNotifier {
   static const _kThemeModeKey = 'theme_mode';
   static const _kWindowCountKey = 'window_count';
   static const _kWeightsKey = 'window_weights';
+  static const _kBottomReserveKey = 'bottom_reserve';
+  static const _kTopReserveKey = 'top_reserve';
+
+  /// Запас снизу (лог. px): чтобы окна не заезжали под климат-панель.
+  double get bottomReserve => (_prefs.getDouble(_kBottomReserveKey) ?? 150.0).clamp(0.0, 400.0);
+
+  Future<void> setBottomReserve(double v) async {
+    await _prefs.setDouble(_kBottomReserveKey, v.clamp(0.0, 400.0));
+    notifyListeners();
+  }
+
+  /// Запас сверху (лог. px): под системный статус-бар, если он есть.
+  double get topReserve => (_prefs.getDouble(_kTopReserveKey) ?? 0.0).clamp(0.0, 200.0);
+
+  Future<void> setTopReserve(double v) async {
+    await _prefs.setDouble(_kTopReserveKey, v.clamp(0.0, 200.0));
+    notifyListeners();
+  }
 
   final SharedPreferences _prefs;
   late ThemeMode _themeMode;

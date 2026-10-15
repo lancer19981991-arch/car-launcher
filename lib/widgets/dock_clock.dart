@@ -33,12 +33,17 @@ class _DockClockState extends State<DockClock> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
+    // Одна строка: крупное время + мелкая дата рядом — минимум высоты.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.firstBaseline,
+      textBaseline: TextBaseline.alphabetic,
       children: [
         Text(
           DateFormat.Hm().format(_now),
-          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
+        const SizedBox(width: 6),
         Text(
           DateFormat('d.MM').format(_now),
           style: theme.textTheme.labelSmall?.copyWith(

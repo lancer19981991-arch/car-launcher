@@ -321,19 +321,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final size = MediaQuery.sizeOf(context);
     final portrait = size.height >= size.width;
 
+    final showFreeformWarning = !_liveMode && _freeform != null && !_freeform!.supported;
+
     return Scaffold(
       body: WallpaperBackground(
-        // SafeArea только снизу/по бокам — верх отдаём под статус-бар.
         child: SafeArea(
           top: false,
+          bottom: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+            padding: EdgeInsets.fromLTRB(8, 4 + settings.topReserve, 8, 8 + settings.bottomReserve),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildTopBar(),
-                _buildHints(),
-                const SizedBox(height: 8),
+                // Подсказку показываем только в режиме правки и очень мелко,
+                // чтобы не отъедать место на главном экране.
+                if (_editing)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2, left: 6),
+                    child: Text(
+                      'нажмите окно — выбрать · тяните разделитель — размер',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                        fontSize: 10,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                if (showFreeformWarning)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: _freeformWarning(),
+                  ),
+                const SizedBox(height: 6),
                 Expanded(child: _buildWindows(settings, portrait)),
               ],
             ),
@@ -343,13 +364,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Widget _freeformWarning() {
+    final theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.errorContainer,
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        leading: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.onErrorContainer),
+        title: Text('Свободные окна выключены — приложения открываются на весь экран',
+            style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 11)),
+        trailing: TextButton(onPressed: _showFreeformHelp, child: const Text('Как включить')),
+      ),
+    );
+  }
+
   Widget _buildTopBar() {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
         color: theme.cardTheme.color,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
@@ -357,22 +394,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const Spacer(),
           if (_liveMode)
             FilledButton.icon(
+              style: _compactBtn,
               onPressed: _toggleEditing,
-              icon: Icon(_editing ? Icons.check_rounded : Icons.edit_rounded, size: 18),
+              icon: Icon(_editing ? Icons.check_rounded : Icons.edit_rounded, size: 16),
               label: Text(_editing ? 'Готово' : 'Изменить'),
             )
           else
             FilledButton.icon(
+              style: _compactBtn,
               onPressed: _layingOut ? null : _layoutAllWindows,
               icon: _layingOut
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.dashboard_rounded, size: 18),
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.dashboard_rounded, size: 16),
               label: const Text('Разложить'),
             ),
-          const SizedBox(width: 8),
-          IconButton.filledTonal(
+          const SizedBox(width: 6),
+          IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: 'Настройки',
-            icon: const Icon(Icons.settings_rounded),
+            icon: const Icon(Icons.settings_rounded, size: 22),
             onPressed: _openSettings,
           ),
         ],
@@ -380,45 +420,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildHints() {
-    final theme = Theme.of(context);
-    final hintStyle = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-    );
-    final showFreeformWarning = !_liveMode && _freeform != null && !_freeform!.supported;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (_editing) ...[
-          const SizedBox(height: 6),
-          Text('Правка: нажмите окно — выбрать приложение, тяните разделитель — размер. Затем «Готово».',
-              style: hintStyle),
-        ] else if (_liveMode) ...[
-          const SizedBox(height: 6),
-          Text('Долгое нажатие на окно — сменить приложение.', style: hintStyle),
-        ],
-        if (_live != null && (!_live!.available || _live!.lastError != null)) ...[
-          const SizedBox(height: 6),
-          Text(_live!.diagnostics, style: theme.textTheme.labelSmall),
-        ],
-        if (showFreeformWarning) ...[
-          const SizedBox(height: 6),
-          Card(
-            color: theme.colorScheme.errorContainer,
-            margin: EdgeInsets.zero,
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.onErrorContainer),
-              title: Text('Свободные окна выключены — приложения открываются на весь экран',
-                  style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 12)),
-              trailing: TextButton(onPressed: _showFreeformHelp, child: const Text('Как включить')),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
+  static final ButtonStyle _compactBtn = FilledButton.styleFrom(
+    visualDensity: VisualDensity.compact,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
 
   Widget _buildWindows(SettingsService settings, bool portrait) {
     final count = settings.windowCount;

@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../models/app_info.dart';
+
 /// Канал связи с нативной (Kotlin) стороной — android/.../MainActivity.kt.
 ///
 /// Всё, что требует настоящих системных прав (роль лаунчера по умолчанию,
@@ -47,5 +49,24 @@ class NativeBridge {
   /// экран поверх (см. README, раздел "Activity Embedding").
   static Future<void> openMediaPane() async {
     await _channel.invokeMethod('openMediaPane');
+  }
+
+  /// Все установленные приложения со значком в списке приложений
+  /// (кроме самого лаунчера), отсортированы по названию.
+  static Future<List<AppInfo>> getInstalledApps() async {
+    final raw =
+        await _channel.invokeListMethod<Object?>('getInstalledApps') ?? const [];
+    return raw
+        .map((e) => AppInfo.fromMap(e! as Map<Object?, Object?>))
+        .toList();
+  }
+
+  /// Запустить приложение. false — если оно удалено или не запускается.
+  static Future<bool> launchApp(String packageName) async {
+    final ok = await _channel.invokeMethod<bool>(
+      'launchApp',
+      {'packageName': packageName},
+    );
+    return ok ?? false;
   }
 }

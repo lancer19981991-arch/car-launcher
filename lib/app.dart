@@ -3,13 +3,15 @@ import 'package:provider/provider.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/media_pane_screen.dart';
+import 'services/preset_service.dart';
 import 'services/settings_service.dart';
 import 'theme/app_theme.dart';
 
 class CarLauncherApp extends StatelessWidget {
-  const CarLauncherApp({super.key, required this.settings});
+  const CarLauncherApp({super.key, required this.settings, required this.presets});
 
   final SettingsService settings;
+  final PresetService presets;
 
   @override
   Widget build(BuildContext context) {
@@ -22,8 +24,11 @@ class CarLauncherApp extends StatelessWidget {
     final initialRoute = WidgetsBinding.instance.platformDispatcher.defaultRouteName;
     final isMediaPane = initialRoute == '/media_pane';
 
-    return ChangeNotifierProvider<SettingsService>.value(
-      value: settings,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<SettingsService>.value(value: settings),
+        ChangeNotifierProvider<PresetService>.value(value: presets),
+      ],
       child: Consumer<SettingsService>(
         builder: (context, settings, _) {
           return MaterialApp(

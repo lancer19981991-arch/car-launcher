@@ -1,18 +1,31 @@
 import 'package:flutter/material.dart';
 
-/// Один "пресет" на главном экране — быстрый ярлык
-/// (радиостанция, приложение, сценарий и т.п.).
+/// Слот быстрого запуска на главном экране.
 ///
-/// [action] выполняется по тапу. Сюда позже можно подставить
-/// реальный запуск приложения через NativeBridge.launchApp(packageName).
-class CarPreset {
-  const CarPreset({
-    required this.title,
+/// Какое приложение открывает слот, выбирает сам пользователь
+/// (долгое нажатие на пресет) — выбор хранится в PresetService.
+/// [hint] и [icon] показываются, пока приложение не назначено.
+class PresetSlot {
+  const PresetSlot({
+    required this.id,
+    required this.hint,
     required this.icon,
-    required this.action,
   });
 
-  final String title;
+  /// Ключ для хранения выбора. Не менять у существующих слотов —
+  /// иначе пользовательские назначения потеряются.
+  final String id;
+  final String hint;
   final IconData icon;
-  final VoidCallback action;
 }
+
+const List<PresetSlot> kPresetSlots = [
+  PresetSlot(id: 'nav', hint: 'Навигация', icon: Icons.navigation_rounded),
+  PresetSlot(id: 'music', hint: 'Музыка', icon: Icons.library_music_rounded),
+  PresetSlot(id: 'phone', hint: 'Телефон', icon: Icons.call_rounded),
+  PresetSlot(id: 'camera', hint: 'Камера', icon: Icons.videocam_rounded),
+  PresetSlot(id: 'radio', hint: 'Радио', icon: Icons.radio_rounded),
+  PresetSlot(id: 'video', hint: 'Видео', icon: Icons.ondemand_video_rounded),
+  PresetSlot(id: 'weather', hint: 'Погода', icon: Icons.wb_sunny_rounded),
+  PresetSlot(id: 'browser', hint: 'Браузер', icon: Icons.public_rounded),
+];

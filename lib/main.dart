@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app.dart';
+import 'services/preset_service.dart';
 import 'services/settings_service.dart';
 
 Future<void> main() async {
@@ -15,6 +16,7 @@ Future<void> main() async {
   ]);
 
   final settings = await SettingsService.load();
+  final presets = await PresetService.load();
 
-  runApp(CarLauncherApp(settings: settings));
+  runApp(CarLauncherApp(settings: settings, presets: presets));
 }

@@ -1,63 +1,83 @@
 import 'package:flutter/material.dart';
 
-import '../models/preset.dart';
+/// Что показать в одной плитке пресета.
+class PresetTileData {
+  const PresetTileData({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+    required this.onLongPress,
+    this.subtitle,
+  });
 
-/// Сетка быстрых ярлыков (пресетов) на главном экране.
+  final String title;
+  final String? subtitle;
+  final Widget icon;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+}
+
+/// Сетка пресетов на главном экране.
 class PresetGrid extends StatelessWidget {
-  const PresetGrid({super.key, required this.presets});
+  const PresetGrid({super.key, required this.tiles});
 
-  final List<CarPreset> presets;
+  final List<PresetTileData> tiles;
 
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: presets.length,
+      itemCount: tiles.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
         childAspectRatio: 1,
       ),
-      itemBuilder: (context, index) {
-        final preset = presets[index];
-        return _PresetTile(preset: preset);
-      },
+      itemBuilder: (context, index) => _PresetTile(data: tiles[index]),
     );
   }
 }
 
 class _PresetTile extends StatelessWidget {
-  const _PresetTile({required this.preset});
+  const _PresetTile({required this.data});
 
-  final CarPreset preset;
+  final PresetTileData data;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material(
-      color: Colors.transparent,
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: preset.action,
-        child: Card(
-          margin: EdgeInsets.zero,
+        onTap: data.onTap,
+        onLongPress: data.onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(preset.icon, size: 28, color: theme.colorScheme.primary),
+              SizedBox(width: 40, height: 40, child: Center(child: data.icon)),
               const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(
-                  preset.title,
-                  style: theme.textTheme.labelMedium,
+              Text(
+                data.title,
+                style: theme.textTheme.labelMedium,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (data.subtitle != null)
+                Text(
+                  data.subtitle!,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-              ),
             ],
           ),
         ),

@@ -63,9 +63,37 @@ jobs:
         working-directory: build_output
         run: flutter pub get
 
+      # Ошибки компиляции Dart ловим заранее и понятнее, чем в выводе Gradle.
+      # Предупреждения/подсказки линтера сборку не валят — только ошибки.
+      - name: flutter analyze
+        working-directory: build_output
+        shell: bash
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee "$GITHUB_WORKSPACE/analyze.log"
+
       - name: Build release APK
         working-directory: build_output
-        run: flutter build apk --release
+        shell: bash
+        run: flutter build apk --release 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      # Полные логи Actions отдаются с домена, который доступен не из
+      # всех окружений; аннотации запуска видны через обычный GitHub API.
+      # Поэтому при падении дублируем ключевые строки ошибок в аннотацию.
+      - name: Report errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'EOF'
+          import pathlib
+          for name in ("analyze.log", "build.log"):
+              p = pathlib.Path(name)
+              if not p.exists():
+                  continue
+              lines = p.read_text(errors="replace").splitlines()
+              errors = [l for l in lines if "error" in l.lower() or l.startswith("e: ")]
+              chosen = errors[:40] or lines[-40:]
+              msg = "\n".join(chosen).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title={name}::{msg}")
+          EOF
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

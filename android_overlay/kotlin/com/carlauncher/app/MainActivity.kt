@@ -2,17 +2,25 @@ package com.carlauncher.app
 
 import android.app.admin.DevicePolicyManager
 import android.app.role.RoleManager
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
 
 /**
  * Главная (левая) панель лаунчера. Кроме стандартного запуска Flutter,
@@ -73,9 +81,89 @@ class MainActivity : FlutterActivity() {
                         openMediaPane()
                         result.success(null)
                     }
+                    "getInstalledApps" -> {
+                        // Чтение иконок может занять заметное время на
+                        // устройствах с большим числом приложений — делаем
+                        // это в фоне, а ответ отдаём на главном потоке
+                        // (MethodChannel требует отвечать с него).
+                        backgroundExecutor.execute {
+                            val apps = try {
+                                loadInstalledApps()
+                            } catch (e: Exception) {
+                                mainHandler.post {
+                                    result.error("APPS_FAILED", e.message, null)
+                                }
+                                return@execute
+                            }
+                            mainHandler.post { result.success(apps) }
+                        }
+                    }
+                    "launchApp" -> {
+                        val pkg = call.argument<String>("packageName")
+                        result.success(pkg != null && launchApp(pkg))
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    override fun onDestroy() {
+        backgroundExecutor.shutdown()
+        super.onDestroy()
+    }
+
+    /**
+     * Все приложения, у которых есть значок в списке приложений
+     * (intent MAIN + LAUNCHER), кроме самого лаунчера. Для видимости
+     * чужих пакетов на Android 11+ в манифесте объявлен блок <queries>.
+     */
+    private fun loadInstalledApps(): List<Map<String, Any>> {
+        val pm = packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        @Suppress("DEPRECATION")
+        val activities = pm.queryIntentActivities(intent, 0)
+
+        return activities
+            .map { it.activityInfo }
+            .filter { it.packageName != packageName }
+            .distinctBy { it.packageName }
+            .map { info ->
+                mapOf(
+                    "packageName" to info.packageName,
+                    "label" to info.loadLabel(pm).toString(),
+                    "icon" to drawableToPng(info.loadIcon(pm)),
+                )
+            }
+            .sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    /** Иконка в PNG. Рисуем через Canvas, т.к. это может быть не
+     *  BitmapDrawable (адаптивные иконки Android 8+). */
+    private fun drawableToPng(drawable: Drawable, sizePx: Int = 128): ByteArray {
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, sizePx, sizePx)
+        drawable.draw(canvas)
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        bitmap.recycle()
+        return out.toByteArray()
+    }
+
+    /** Запуск приложения по имени пакета. false — если приложение
+     *  удалено или у него нет экрана запуска. */
+    private fun launchApp(pkg: String): Boolean {
+        val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        return try {
+            startActivity(intent)
+            true
+        } catch (e: ActivityNotFoundException) {
+            false
+        }
     }
 
     /** Является ли это приложение сейчас выбранным домашним экраном. */

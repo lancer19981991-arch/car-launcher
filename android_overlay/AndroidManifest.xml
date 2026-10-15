@@ -1,22 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Это финальный манифест лаунчера. Он заменяет собой тот,
-    что сгенерирует `flutter create` — см. README, шаг 2.
+    Финальный манифест лаунчера. Заменяет сгенерированный flutter create.
 
-    Сознательно НЕТ: android:sharedUserId="android.uid.system" и
-    системных permission (WRITE_SETTINGS, FORCE_STOP_PACKAGES и т.п.) —
-    такие права даёт только подпись платформенным ключом устройства,
-    которого у обычного разработчика нет и быть не может.
-    Вместо этого "автозапуск" и "киоск" сделаны официальными способами:
-    роль лаунчера по умолчанию (HOME) + опционально Device Owner.
+    sharedUserId="android.uid.system" + подпись платформенным ключом
+    прошивки (в CI — публичным тестовым ключом AOSP) делают лаунчер
+    СИСТЕМНЫМ приложением. Это нужно для встраивания живых окон чужих
+    приложений (ActivityView), как в CarCar. Работает только на
+    прошивках, которые доверяют этому ключу (многие китайские магнитолы;
+    у пользователя CarCar так и запускается). На обычном телефоне/
+    эмуляторе такой APK либо не установится, либо не получит системных
+    прав — тогда лаунчер сам откатывается на свободные окна.
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:sharedUserId="android.uid.system"
+    tools:ignore="Deprecated">
 
-    <!-- Нужно только для необязательного переприменения киоск-режима
-         после перезагрузки (см. BootReceiver). Для самого автозапуска
-         лаунчера это разрешение не требуется — Android сам открывает
-         домашний экран после загрузки. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Запуск activity чужих приложений на виртуальных дисплеях окон.
+         Это системные/signature-разрешения — реально выдаются только
+         системному (платформенно подписанному) приложению. -->
+    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.MANAGE_ACTIVITY_TASKS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.ACTIVITY_EMBEDDING"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:label="Car Launcher"

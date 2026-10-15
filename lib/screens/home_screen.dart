@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/app_info.dart';
 import '../models/freeform_status.dart';
+import '../models/live_windows_status.dart';
 import '../models/preset.dart';
 import '../services/native_bridge.dart';
 import '../services/preset_service.dart';
@@ -27,6 +28,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   FreeformStatus? _freeform;
 
+  /// Доступно ли встраивание живых окон (системный режим, как CarCar).
+  LiveWindowsStatus? _live;
+  bool get _liveMode => _live?.available == true;
+
   /// Ключи областей окон — по ним считаются координаты для запуска.
   final List<GlobalKey> _windowKeys = List.generate(kWindowSlots.length, (_) => GlobalKey());
 
@@ -34,6 +39,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// а не при каждом возвращении на домашний экран.
   static bool _autoLayoutDone = false;
   bool _layingOut = false;
+
+  /// Режим правки: в системном режиме живые окна перехватывают касания,
+  /// поэтому для смены приложения их временно убирают и показывают карточки.
+  bool _editing = false;
 
   @override
   void initState() {
@@ -53,17 +62,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _loadApps();
       _loadFreeformStatus();
+      _loadLiveStatus().then((_) {
+        // Вернулись на домашний экран — восстановить живые окна.
+        if (_liveMode) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _syncLiveWindows());
+        }
+      });
     }
   }
 
   Future<void> _init() async {
-    await Future.wait([_loadApps(), _loadFreeformStatus()]);
+    await Future.wait([_loadApps(), _loadFreeformStatus(), _loadLiveStatus()]);
     if (!mounted || _autoLayoutDone) return;
     _autoLayoutDone = true;
-    // Без поддержки свободных окна три приложения открылись бы на весь
-    // экран друг поверх друга — автоматически это делать нельзя.
+
+    // Системный режим (как CarCar): встраиваем живые окна сразу.
+    if (_liveMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncLiveWindows());
+      return;
+    }
+    // Иначе — свободные окна, и только если устройство их поддерживает:
+    // без этого три приложения открылись бы на весь экран друг поверх друга.
     if (_freeform?.supported != true) return;
     WidgetsBinding.instance.addPostFrameCallback((_) => _layoutAllWindows());
+  }
+
+  Future<void> _loadLiveStatus() async {
+    try {
+      final status = await NativeBridge.liveWindowsAvailable();
+      if (mounted) setState(() => _live = status);
+    } catch (_) {
+      // Останется null — считаем, что живых окон нет.
+    }
+  }
+
+  /// Собрать живые окна для всех назначенных слотов и показать их.
+  Future<void> _syncLiveWindows() async {
+    if (!_liveMode || _editing) return;
+    final presets = context.read<PresetService>();
+    final specs = <AppWindowSpec>[];
+    for (var i = 0; i < kWindowSlots.length; i++) {
+      final pkg = presets.packageFor(kWindowSlots[i].id);
+      if (pkg == null) continue;
+      final bounds = _windowBoundsPx(i);
+      if (bounds == null) continue;
+      specs.add(AppWindowSpec(slotId: kWindowSlots[i].id, packageName: pkg, boundsPx: bounds));
+    }
+    try {
+      await NativeBridge.syncAppWindows(specs);
+    } catch (_) {
+      // ignore — на следующем кадре попробуем снова
+    }
   }
 
   Future<void> _loadApps() async {
@@ -99,6 +148,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await presets.assign(slot.id, app.packageName);
     if (!mounted) return;
     setState(() => _apps = {..._apps, app.packageName: app});
+    // В системном режиме сразу показать живое окно для этого слота.
+    if (_liveMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncLiveWindows());
+    }
   }
 
   void _showSlotMenu(PresetSlot slot, {VoidCallback? onOpen}) {
@@ -183,6 +236,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (pickIfEmpty) await _pickApp(slot);
       return true;
     }
+    // В системном режиме окно рисуется живым оверлеем — просто пересобрать
+    // (кроме режима правки, где живые окна временно убраны).
+    if (_liveMode && !_editing) {
+      await _syncLiveWindows();
+      return true;
+    }
     final bounds = _windowBoundsPx(index);
     if (bounds == null) return false;
     final ok = await NativeBridge.launchAppInBounds(pkg, bounds);
@@ -205,14 +264,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     setState(() => _layingOut = true);
     try {
-      for (var i = 0; i < kWindowSlots.length; i++) {
-        if (!mounted) return;
-        await _openWindow(i, pickIfEmpty: false);
-        // Небольшая пауза: система успевает создать окно до следующего запуска.
-        await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (_liveMode) {
+        // Системный режим: все живые окна одним вызовом.
+        await _syncLiveWindows();
+      } else {
+        // Свободные окна: запускаем по очереди с паузой, чтобы система
+        // успевала создать каждое окно.
+        for (var i = 0; i < kWindowSlots.length; i++) {
+          if (!mounted) return;
+          await _openWindow(i, pickIfEmpty: false);
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+        }
       }
     } finally {
       if (mounted) setState(() => _layingOut = false);
+    }
+  }
+
+  Future<void> _toggleEditing() async {
+    if (_editing) {
+      // Завершаем правку — возвращаем живые окна.
+      setState(() => _editing = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncLiveWindows());
+    } else {
+      // Входим в правку — убираем живые окна, чтобы открыть карточки.
+      setState(() => _editing = true);
+      try {
+        await NativeBridge.clearAppWindows();
+      } catch (_) {
+        // ignore
+      }
     }
   }
 
@@ -369,6 +450,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildWindowsArea(PresetService presets) {
     final theme = Theme.of(context);
     final status = _freeform;
+    final showFreeformWarning = !_liveMode && status != null && !status.supported;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -376,27 +458,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           children: [
             Expanded(
               child: Text(
-                'Нажмите на окно, чтобы открыть приложение. Удерживайте, чтобы сменить.',
+                _liveMode
+                    ? (_editing
+                        ? 'Правка: нажмите на окно, чтобы выбрать приложение. Затем — «Готово».'
+                        : 'Системный режим: приложения показываются живыми окнами. «Изменить окна» — чтобы сменить.')
+                    : 'Нажмите на окно, чтобы открыть приложение. Удерживайте, чтобы сменить.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
             ),
             const SizedBox(width: 12),
-            FilledButton.icon(
-              onPressed: _layingOut ? null : _layoutAllWindows,
-              icon: _layingOut
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.dashboard_rounded),
-              label: const Text('Разложить окна'),
-            ),
+            if (_liveMode)
+              FilledButton.icon(
+                onPressed: _toggleEditing,
+                icon: Icon(_editing ? Icons.check_rounded : Icons.edit_rounded),
+                label: Text(_editing ? 'Готово' : 'Изменить окна'),
+              )
+            else
+              FilledButton.icon(
+                onPressed: _layingOut ? null : _layoutAllWindows,
+                icon: _layingOut
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.dashboard_rounded),
+                label: const Text('Разложить окна'),
+              ),
           ],
         ),
-        if (status != null && !status.supported) ...[
+        if (showFreeformWarning) ...[
           const SizedBox(height: 8),
           Card(
             color: theme.colorScheme.errorContainer,

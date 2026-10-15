@@ -4,12 +4,31 @@ import 'package:flutter/services.dart';
 
 import '../models/app_info.dart';
 import '../models/freeform_status.dart';
+import '../models/live_windows_status.dart';
 
 /// Канал связи с нативной (Kotlin) стороной — android/.../MainActivity.kt.
 ///
 /// Всё, что требует настоящих системных прав (роль лаунчера по умолчанию,
 /// device owner, lock task / kiosk-режим), решается на нативной стороне
 /// через официальные Android API, а не через фейковые "system" permissions.
+/// Одно живое окно: какое приложение и в каких границах (px экрана).
+class AppWindowSpec {
+  const AppWindowSpec({required this.slotId, required this.packageName, required this.boundsPx});
+
+  final String slotId;
+  final String packageName;
+  final Rect boundsPx;
+
+  Map<String, Object> toMap() => {
+        'slotId': slotId,
+        'packageName': packageName,
+        'left': boundsPx.left.round(),
+        'top': boundsPx.top.round(),
+        'width': boundsPx.width.round(),
+        'height': boundsPx.height.round(),
+      };
+}
+
 class NativeBridge {
   NativeBridge._();
 
@@ -58,6 +77,28 @@ class NativeBridge {
       'bottom': boundsPx.bottom.round(),
     });
     return ok ?? false;
+  }
+
+  /// Доступно ли встраивание живых окон приложений (системный режим,
+  /// как у CarCar).
+  static Future<LiveWindowsStatus> liveWindowsAvailable() async {
+    final raw = await _channel.invokeMapMethod<Object?, Object?>('liveWindowsAvailable');
+    return LiveWindowsStatus.fromMap(raw ?? const {});
+  }
+
+  /// Показать живые окна приложений в заданных областях (px экрана
+  /// лаунчера). Возвращает true, если встраивание применено; false —
+  /// если устройство/подпись его не поддерживают.
+  static Future<bool> syncAppWindows(List<AppWindowSpec> windows) async {
+    final ok = await _channel.invokeMethod<bool>('syncAppWindows', {
+      'windows': [for (final w in windows) w.toMap()],
+    });
+    return ok ?? false;
+  }
+
+  /// Убрать все живые окна.
+  static Future<void> clearAppWindows() async {
+    await _channel.invokeMethod('clearAppWindows');
   }
 
   static Future<FreeformStatus> getFreeformStatus() async {

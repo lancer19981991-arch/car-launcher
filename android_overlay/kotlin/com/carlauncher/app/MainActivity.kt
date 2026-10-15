@@ -38,6 +38,15 @@ class MainActivity : FlutterActivity() {
 
     private val channelName = "car_launcher/native"
 
+    private val appWindowHost by lazy { AppWindowHost(this) }
+
+    override fun onPause() {
+        super.onPause()
+        // Уходя в фон, снимаем живые окна, чтобы их виртуальные дисплеи
+        // не висели поверх запущенного на весь экран приложения.
+        appWindowHost.clear()
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -53,6 +62,32 @@ class MainActivity : FlutterActivity() {
                     "startKioskMode" -> result.success(startKioskMode())
                     "stopKioskMode" -> {
                         stopKioskMode()
+                        result.success(null)
+                    }
+                    "liveWindowsAvailable" -> result.success(
+                        mapOf(
+                            "available" to appWindowHost.isAvailable(),
+                            "systemApp" to appWindowHost.isSystemApp(),
+                        ),
+                    )
+                    "syncAppWindows" -> {
+                        val raw = call.argument<List<Map<String, Any>>>("windows") ?: emptyList()
+                        val specs = raw.mapNotNull { m ->
+                            val slotId = m["slotId"] as? String ?: return@mapNotNull null
+                            val pkg = m["packageName"] as? String ?: return@mapNotNull null
+                            AppWindowHost.WindowSpec(
+                                slotId = slotId,
+                                packageName = pkg,
+                                left = (m["left"] as? Int) ?: 0,
+                                top = (m["top"] as? Int) ?: 0,
+                                width = (m["width"] as? Int) ?: 0,
+                                height = (m["height"] as? Int) ?: 0,
+                            )
+                        }
+                        result.success(appWindowHost.sync(specs))
+                    }
+                    "clearAppWindows" -> {
+                        appWindowHost.clear()
                         result.success(null)
                     }
                     "getFreeformStatus" -> result.success(freeformStatus())

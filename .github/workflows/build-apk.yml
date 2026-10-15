@@ -78,6 +78,39 @@ jobs:
         shell: bash
         run: flutter build apk --release 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
+      # Переподписываем APK публичным платформенным ключом AOSP. На
+      # прошивках, которые доверяют этому ключу (многие китайские
+      # магнитолы — у пользователя так запускается CarCar),
+      # sharedUserId=android.uid.system делает лаунчер системным
+      # приложением, и только тогда работает встраивание живых окон
+      # (ActivityView). Ключ публичный — лежит в открытом AOSP;
+      # приватности он не несёт, это тестовый ключ сборки Android.
+      - name: Platform-sign APK with AOSP test key
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$GITHUB_WORKSPACE/signing"
+          cd "$GITHUB_WORKSPACE/signing"
+          base="https://raw.githubusercontent.com/aosp-mirror/platform_build/master/target/product/security"
+          curl -fsSL "$base/platform.pk8" -o platform.pk8
+          curl -fsSL "$base/platform.x509.pem" -o platform.x509.pem
+
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/ | sort -V | tail -1)
+          echo "build-tools: $BT"
+          APKSIGNER="$BT/apksigner"
+          ZIPALIGN="$BT/zipalign"
+
+          IN="$GITHUB_WORKSPACE/build_output/build/app/outputs/flutter-apk/app-release.apk"
+          OUT="$GITHUB_WORKSPACE/car-launcher-signed.apk"
+
+          "$ZIPALIGN" -f -p 4 "$IN" "$OUT"
+          "$APKSIGNER" sign \
+            --key platform.pk8 --cert platform.x509.pem \
+            --v2-signing-enabled true --v3-signing-enabled true \
+            "$OUT"
+          echo "=== signer certificate (ожидается AOSP platform, SHA1 2719...) ==="
+          "$APKSIGNER" verify --print-certs "$OUT" | grep -i "SHA-1" || true
+
       # Полные логи Actions отдаются с домена, который доступен не из
       # всех окружений; аннотации запуска видны через обычный GitHub API.
       # Поэтому при падении дублируем ключевые строки ошибок в аннотацию.
@@ -102,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: car-launcher-apk
-          path: build_output/build/app/outputs/flutter-apk/app-release.apk
+          path: car-launcher-signed.apk
           if-no-files-found: error
 
       # Артефакты Actions (шаг выше) отдаются через blob.core.windows.net,
@@ -114,9 +147,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="build-${{ github.run_number }}"
-          apk="build_output/build/app/outputs/flutter-apk/app-release.apk"
-          cp "$apk" "car-launcher-${tag}.apk"
+          cp "$GITHUB_WORKSPACE/car-launcher-signed.apk" "car-launcher-${tag}.apk"
           gh release create "$tag" "car-launcher-${tag}.apk" \
             --repo "${{ github.repository }}" \
             --title "Car Launcher build #${{ github.run_number }}" \
-            --notes "Автоматическая сборка из коммита ${{ github.sha }}."
+            --notes "Автоматическая сборка из коммита ${{ github.sha }}. Подписан платформенным ключом AOSP (системное приложение)."

@@ -1,11 +1,15 @@
 package com.carlauncher.app
 
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
 
@@ -27,9 +31,55 @@ import android.widget.FrameLayout
  * координатах, которые присылает Flutter. Так мы не боремся с
  * композитингом Flutter PlatformView.
  */
-class AppWindowHost(private val activity: Activity) {
+class AppWindowHost(
+    private val activity: Activity,
+    private val onLongPress: (slotId: String) -> Unit = {},
+) {
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Контейнер поверх одного живого окна. Ловит ДОЛГОЕ нажатие (для
+     * смены приложения), но обычные касания пропускает в приложение:
+     * onInterceptTouchEvent всегда видит DOWN/UP, даже когда возвращает
+     * false, поэтому таймер долгого нажатия работает, а само событие
+     * уходит в ActivityView под контейнером.
+     */
+    @SuppressLint("ViewConstructor")
+    private inner class WindowFrame(context: Context, val slotId: String) : FrameLayout(context) {
+        private val longPressMs = ViewConfiguration.getLongPressTimeout().toLong()
+        private val slop = ViewConfiguration.get(context).scaledTouchSlop
+        private var downX = 0f
+        private var downY = 0f
+        private var fired = false
+        private val longPressRunnable = Runnable {
+            fired = true
+            onLongPress(slotId)
+        }
+
+        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    fired = false
+                    downX = ev.x
+                    downY = ev.y
+                    handler.postDelayed(longPressRunnable, longPressMs)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (kotlin.math.abs(ev.x - downX) > slop ||
+                        kotlin.math.abs(ev.y - downY) > slop
+                    ) {
+                        handler.removeCallbacks(longPressRunnable)
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(longPressRunnable)
+                }
+            }
+            // Никогда не перехватываем — касания идут в живое окно.
+            return false
+        }
+    }
 
     /** Оверлей-контейнер поверх FlutterView, в нём лежат окна. */
     private var overlay: FrameLayout? = null
@@ -38,7 +88,10 @@ class AppWindowHost(private val activity: Activity) {
     private val windows = HashMap<String, WindowEntry>()
 
     private class WindowEntry(
-        val view: View,
+        /** Контейнер в оверлее (ловит долгое нажатие). */
+        val frame: FrameLayout,
+        /** Сам ActivityView с живым приложением. */
+        val activityView: View,
         var packageName: String,
         var started: Boolean = false,
     )
@@ -125,16 +178,16 @@ class AppWindowHost(private val activity: Activity) {
             if (existing == null) {
                 addWindow(overlay, spec)
             } else {
-                applyBounds(existing.view, spec)
+                applyBounds(existing.frame, spec)
             }
         }
         return true
     }
 
     private fun addWindow(overlay: FrameLayout, spec: WindowSpec) {
-        val view = try {
+        val activityView = try {
             activityViewClass!!
-                .getConstructor(android.content.Context::class.java)
+                .getConstructor(Context::class.java)
                 .newInstance(activity) as View
         } catch (e: Throwable) {
             // Нет подходящего конструктора — встраивание недоступно.
@@ -142,19 +195,30 @@ class AppWindowHost(private val activity: Activity) {
             return
         }
 
+        // Оборачиваем ActivityView в контейнер, который ловит долгое
+        // нажатие (смена приложения), пропуская обычные касания внутрь.
+        val frame = WindowFrame(activity, spec.slotId)
+        frame.addView(
+            activityView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
         val lp = FrameLayout.LayoutParams(spec.width, spec.height)
         lp.leftMargin = spec.left
         lp.topMargin = spec.top
-        overlay.addView(view, lp)
+        overlay.addView(frame, lp)
 
-        val entry = WindowEntry(view, spec.packageName)
+        val entry = WindowEntry(frame, activityView, spec.packageName)
         windows[spec.slotId] = entry
 
         // ActivityView должен быть прикреплён и измерен до startActivity.
         // Колбэка готовности не используем (StateCallback — абстрактный
         // класс, через рефлексию не подклассить), поэтому запускаем с
         // небольшой задержкой и несколькими повторами.
-        view.post { startInto(entry, attempt = 0) }
+        activityView.post { startInto(entry, attempt = 0) }
     }
 
     private fun startInto(entry: WindowEntry, attempt: Int) {
@@ -165,7 +229,7 @@ class AppWindowHost(private val activity: Activity) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val ok = try {
             val m = activityViewClass!!.getMethod("startActivity", Intent::class.java)
-            m.invoke(entry.view, intent)
+            m.invoke(entry.activityView, intent)
             true
         } catch (e: Throwable) {
             lastError = "startActivity в окне (попытка $attempt): ${e.cause ?: e}"
@@ -180,8 +244,8 @@ class AppWindowHost(private val activity: Activity) {
         }
     }
 
-    private fun applyBounds(view: View, spec: WindowSpec) {
-        val lp = view.layoutParams as? FrameLayout.LayoutParams ?: return
+    private fun applyBounds(frame: FrameLayout, spec: WindowSpec) {
+        val lp = frame.layoutParams as? FrameLayout.LayoutParams ?: return
         if (lp.leftMargin == spec.left && lp.topMargin == spec.top &&
             lp.width == spec.width && lp.height == spec.height
         ) {
@@ -191,17 +255,17 @@ class AppWindowHost(private val activity: Activity) {
         lp.topMargin = spec.top
         lp.width = spec.width
         lp.height = spec.height
-        view.layoutParams = lp
+        frame.layoutParams = lp
     }
 
     private fun removeWindow(slotId: String) {
         val entry = windows.remove(slotId) ?: return
         try {
-            activityViewClass?.getMethod("release")?.invoke(entry.view)
+            activityViewClass?.getMethod("release")?.invoke(entry.activityView)
         } catch (e: Throwable) {
             // ignore
         }
-        overlay?.removeView(entry.view)
+        overlay?.removeView(entry.frame)
     }
 
     /** Убрать все живые окна (например, при уходе лаунчера в фон). */

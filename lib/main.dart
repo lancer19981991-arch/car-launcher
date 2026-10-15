@@ -16,6 +16,11 @@ Future<void> main() async {
     DeviceOrientation.portraitUp,
   ]);
 
+  // Во весь экран: прячем системные панели, чтобы задействовать и место
+  // верхнего статус-бара под свой интерфейс. immersiveSticky — панели
+  // не мешают и возвращаются свайпом от края.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
   final settings = await SettingsService.load();
   final presets = await PresetService.load();
 

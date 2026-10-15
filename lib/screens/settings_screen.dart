@@ -41,6 +41,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _SectionLabel('Окна'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Количество окон на экране'),
+                  const SizedBox(height: 12),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 1, label: Text('1')),
+                      ButtonSegment(value: 2, label: Text('2')),
+                      ButtonSegment(value: 3, label: Text('3')),
+                    ],
+                    selected: {settings.windowCount},
+                    onSelectionChanged: (s) => settings.setWindowCount(s.first),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Размер окон меняется перетаскиванием разделителей '
+                    'в режиме «Изменить» на главном экране.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => settings.setWindowWeights(const [2.0, 1.0, 1.0]),
+                    icon: const Icon(Icons.restart_alt_rounded),
+                    label: const Text('Сбросить пропорции'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
           _SectionLabel('Оформление'),
           Card(
             child: Column(

@@ -38,7 +38,14 @@ class MainActivity : FlutterActivity() {
 
     private val channelName = "car_launcher/native"
 
-    private val appWindowHost by lazy { AppWindowHost(this) }
+    private var channel: MethodChannel? = null
+
+    private val appWindowHost by lazy {
+        AppWindowHost(this) { slotId ->
+            // Долгое нажатие по живому окну — просим Flutter открыть выбор.
+            runOnUiThread { channel?.invokeMethod("onWindowLongPress", slotId) }
+        }
+    }
 
     override fun onPause() {
         super.onPause()
@@ -50,8 +57,9 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            .setMethodCallHandler { call, result ->
+        val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        channel = ch
+        ch.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "requestDefaultLauncher" -> {

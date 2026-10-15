@@ -34,6 +34,25 @@ class NativeBridge {
 
   static const MethodChannel _channel = MethodChannel('car_launcher/native');
 
+  /// Вызывается из нативной стороны при долгом нажатии на живое окно
+  /// (slotId окна). Назначается экраном лаунчера.
+  static void Function(String slotId)? onWindowLongPress;
+
+  static bool _handlerSet = false;
+
+  /// Подписаться на входящие вызовы из нативной стороны (один раз).
+  static void ensureIncomingHandler() {
+    if (_handlerSet) return;
+    _handlerSet = true;
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onWindowLongPress') {
+        final slotId = call.arguments as String?;
+        if (slotId != null) onWindowLongPress?.call(slotId);
+      }
+      return null;
+    });
+  }
+
   /// Является ли это приложение сейчас лаунчером по умолчанию (ролью HOME).
   static Future<bool> isDefaultLauncher() async {
     final result = await _channel.invokeMethod<bool>('isDefaultLauncher');

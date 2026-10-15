@@ -36,7 +36,7 @@ class _DockClockState extends State<DockClock> {
     // Одна строка: крупное время + мелкая дата рядом — минимум высоты.
     return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.firstBaseline,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.alphabetic,
       children: [
         Text(

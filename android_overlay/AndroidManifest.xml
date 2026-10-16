@@ -26,6 +26,10 @@
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.ACTIVITY_EMBEDDING"
         tools:ignore="ProtectedPermissions" />
+    <!-- Привязка виджетов рабочего стола без диалога подтверждения —
+         доступна системному приложению. -->
+    <uses-permission android:name="android.permission.BIND_APPWIDGET"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:label="Car Launcher"

@@ -39,6 +39,7 @@ import android.widget.TextClock
  */
 class AppWindowHost(
     private val activity: Activity,
+    private val widgets: WidgetSupport,
     private val onLongPress: (slotId: String) -> Unit = {},
     private val onPillTap: () -> Unit = {},
 ) {
@@ -122,7 +123,10 @@ class AppWindowHost(
             onLongPress(slotId)
         }
 
-        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        // Отслеживаем касание в dispatchTouchEvent: так долгое нажатие
+        // работает и над некликабельными частями виджета, где дочерний
+        // вид не забирает касание и onInterceptTouchEvent не видит UP.
+        override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     fired = false
@@ -141,8 +145,10 @@ class AppWindowHost(
                     handler.removeCallbacks(longPressRunnable)
                 }
             }
-            // Никогда не перехватываем — касания идут в живое окно.
-            return false
+            // Касания всегда идут в окно/виджет; DOWN подтверждаем сами,
+            // чтобы получить UP и отменить долгое нажатие.
+            val handled = super.dispatchTouchEvent(ev)
+            return handled || ev.actionMasked == MotionEvent.ACTION_DOWN
         }
     }
 
@@ -155,9 +161,11 @@ class AppWindowHost(
     private class WindowEntry(
         /** Контейнер в оверлее (ловит долгое нажатие). */
         val frame: FrameLayout,
-        /** Сам ActivityView с живым приложением. */
+        /** ActivityView с живым приложением или вид виджета. */
         val activityView: View,
         var packageName: String,
+        /** 0 — приложение; иначе id виджета. */
+        val widgetId: Int = 0,
         var started: Boolean = false,
     )
 
@@ -216,6 +224,8 @@ class AppWindowHost(
         val top: Int,
         val width: Int,
         val height: Int,
+        /** 0 — в окне приложение; иначе — виджет с этим id. */
+        val widgetId: Int = 0,
     )
 
     /**
@@ -243,7 +253,8 @@ class AppWindowHost(
         // Убрать окна, которых больше нет или сменилось приложение.
         val toRemove = windows.keys.filter { id ->
             val spec = wanted[id]
-            spec == null || spec.packageName != windows[id]?.packageName
+            val entry = windows[id]
+            spec == null || spec.packageName != entry?.packageName || spec.widgetId != entry?.widgetId
         }
         for (id in toRemove) removeWindow(id)
 
@@ -251,11 +262,35 @@ class AppWindowHost(
         for (spec in specs) {
             val existing = windows[spec.slotId]
             if (existing == null) {
-                addWindow(overlay, spec)
+                if (spec.widgetId != 0) addWidget(overlay, spec) else addWindow(overlay, spec)
             } else {
                 applyBounds(existing.frame, spec)
+                if (existing.widgetId != 0) {
+                    (existing.activityView as? android.appwidget.AppWidgetHostView)
+                        ?.let { widgets.updateSize(it, spec.width, spec.height) }
+                }
             }
         }
+    }
+
+    /** Окно с виджетом рабочего стола вместо живого приложения. */
+    private fun addWidget(overlay: FrameLayout, spec: WindowSpec) {
+        val view = widgets.createView(spec.widgetId)
+        if (view == null) {
+            lastError = "Виджет ${spec.widgetId} не найден (удалён?)"
+            return
+        }
+        val frame = WindowFrame(activity, spec.slotId)
+        frame.addView(
+            view,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
+        )
+        val lp = FrameLayout.LayoutParams(spec.width, spec.height)
+        lp.leftMargin = spec.left
+        lp.topMargin = spec.top
+        overlay.addView(frame, lp)
+        widgets.updateSize(view, spec.width, spec.height)
+        windows[spec.slotId] = WindowEntry(frame, view, spec.packageName, widgetId = spec.widgetId, started = true)
     }
 
     private fun addWindow(overlay: FrameLayout, spec: WindowSpec) {
@@ -334,11 +369,14 @@ class AppWindowHost(
 
     private fun removeWindow(slotId: String) {
         val entry = windows.remove(slotId) ?: return
-        try {
-            activityViewClass?.getMethod("release")?.invoke(entry.activityView)
-        } catch (e: Throwable) {
-            // ignore
+        if (entry.widgetId == 0) {
+            try {
+                activityViewClass?.getMethod("release")?.invoke(entry.activityView)
+            } catch (e: Throwable) {
+                // ignore
+            }
         }
+        // У виджета id не удаляем — он живёт, пока назначен окну.
         overlay?.removeView(entry.frame)
     }
 

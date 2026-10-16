@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../models/app_info.dart';
 import '../models/freeform_status.dart';
 import '../models/live_windows_status.dart';
+import '../models/widget_provider.dart';
 
 /// Канал связи с нативной (Kotlin) стороной — android/.../MainActivity.kt.
 ///
@@ -13,11 +14,19 @@ import '../models/live_windows_status.dart';
 /// через официальные Android API, а не через фейковые "system" permissions.
 /// Одно живое окно: какое приложение и в каких границах (px экрана).
 class AppWindowSpec {
-  const AppWindowSpec({required this.slotId, required this.packageName, required this.boundsPx});
+  const AppWindowSpec({
+    required this.slotId,
+    required this.packageName,
+    required this.boundsPx,
+    this.widgetId = 0,
+  });
 
   final String slotId;
   final String packageName;
   final Rect boundsPx;
+
+  /// 0 — в окне приложение; иначе id виджета рабочего стола.
+  final int widgetId;
 
   Map<String, Object> toMap() => {
         'slotId': slotId,
@@ -26,6 +35,7 @@ class AppWindowSpec {
         'top': boundsPx.top.round(),
         'width': boundsPx.width.round(),
         'height': boundsPx.height.round(),
+        'widgetId': widgetId,
       };
 }
 
@@ -131,6 +141,21 @@ class NativeBridge {
   static Future<void> clearAppWindows() async {
     await _channel.invokeMethod('clearAppWindows');
   }
+
+  /// Все виджеты рабочего стола, установленные на устройстве.
+  static Future<List<WidgetProvider>> getWidgetProviders() async {
+    final raw = await _channel.invokeListMethod<Object?>('getWidgetProviders') ?? const [];
+    return raw.map((e) => WidgetProvider.fromMap(e! as Map<Object?, Object?>)).toList();
+  }
+
+  /// Привязать виджет (и, если нужно, открыть его настройку).
+  /// Возвращает id виджета; null — если настройку отменили.
+  /// Бросает PlatformException, если система не разрешила.
+  static Future<int?> bindWidget(String provider) =>
+      _channel.invokeMethod<int>('bindWidget', {'provider': provider});
+
+  static Future<void> deleteWidget(int widgetId) =>
+      _channel.invokeMethod('deleteWidget', {'widgetId': widgetId});
 
   static Future<FreeformStatus> getFreeformStatus() async {
     final raw = await _channel.invokeMapMethod<Object?, Object?>('getFreeformStatus');

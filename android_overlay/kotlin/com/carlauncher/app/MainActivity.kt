@@ -40,9 +40,40 @@ class MainActivity : FlutterActivity() {
 
     private var channel: MethodChannel? = null
 
+    private val widgetSupport by lazy { WidgetSupport(this) }
+
+    /** Ожидающий ответ Flutter на настройку виджета (bindWidget). */
+    private var pendingConfigure: Pair<Int, MethodChannel.Result>? = null
+
+    override fun onStart() {
+        super.onStart()
+        widgetSupport.startListening()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        widgetSupport.stopListening()
+    }
+
+    @Deprecated("FlutterActivity still routes results here")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != WidgetSupport.REQUEST_CONFIGURE) return
+        val pending = pendingConfigure ?: return
+        pendingConfigure = null
+        val (widgetId, result) = pending
+        if (resultCode == RESULT_OK) {
+            result.success(widgetId)
+        } else {
+            widgetSupport.delete(widgetId)
+            result.success(null)
+        }
+    }
+
     private val appWindowHost by lazy {
         AppWindowHost(
             this,
+            widgetSupport,
             onLongPress = { slotId ->
                 // Долгое нажатие по живому окну — просим Flutter открыть выбор.
                 runOnUiThread { channel?.invokeMethod("onWindowLongPress", slotId) }
@@ -100,6 +131,7 @@ class MainActivity : FlutterActivity() {
                                 top = (m["top"] as? Int) ?: 0,
                                 width = (m["width"] as? Int) ?: 0,
                                 height = (m["height"] as? Int) ?: 0,
+                                widgetId = (m["widgetId"] as? Int) ?: 0,
                             )
                         }
                         val p = call.argument<Map<String, Any>>("pill")
@@ -112,6 +144,38 @@ class MainActivity : FlutterActivity() {
                             )
                         }
                         result.success(appWindowHost.sync(specs, pill))
+                    }
+                    "getWidgetProviders" -> {
+                        backgroundExecutor.execute {
+                            val list = try {
+                                widgetSupport.listProviders()
+                            } catch (e: Exception) {
+                                mainHandler.post { result.error("WIDGETS_FAILED", e.message, null) }
+                                return@execute
+                            }
+                            mainHandler.post { result.success(list) }
+                        }
+                    }
+                    "bindWidget" -> {
+                        val provider = call.argument<String>("provider")
+                        val bound = provider?.let { widgetSupport.bind(it) }
+                        when {
+                            bound == null -> result.error("BIND_FAILED", "Система не разрешила добавить виджет", null)
+                            bound.needsConfigure -> {
+                                // Ответ вернём после экрана настройки виджета.
+                                pendingConfigure?.second?.success(null)
+                                pendingConfigure = bound.widgetId to result
+                                if (!widgetSupport.startConfigure(bound.widgetId)) {
+                                    pendingConfigure = null
+                                    result.success(bound.widgetId) // без настройки
+                                }
+                            }
+                            else -> result.success(bound.widgetId)
+                        }
+                    }
+                    "deleteWidget" -> {
+                        call.argument<Int>("widgetId")?.let { widgetSupport.delete(it) }
+                        result.success(null)
                     }
                     "clearAppWindows" -> {
                         appWindowHost.clear()

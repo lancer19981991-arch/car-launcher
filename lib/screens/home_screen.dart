@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_info.dart';
 import '../models/freeform_status.dart';
 import '../models/live_windows_status.dart';
 import '../models/preset.dart';
+import '../models/widget_provider.dart';
 import '../models/window_rect.dart';
 import '../services/native_bridge.dart';
 import '../services/preset_service.dart';
@@ -13,6 +15,7 @@ import '../widgets/dock_clock.dart';
 import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
 import 'settings_screen.dart';
+import 'widget_picker_screen.dart';
 
 /// Главный экран: весь экран — холст с окнами (свободная раскладка).
 /// Поверх — маленькая полупрозрачная «пилюля» с часами и шестерёнкой;
@@ -155,11 +158,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final presets = context.read<PresetService>();
     final specs = <AppWindowSpec>[];
     for (final r in _layout) {
+      final widgetId = presets.widgetFor(r.slotId);
       final pkg = presets.packageFor(r.slotId);
-      if (pkg == null) continue;
+      if (widgetId == null && pkg == null) continue;
       final bounds = _boundsPx(r.slotId);
       if (bounds == null) continue;
-      specs.add(AppWindowSpec(slotId: r.slotId, packageName: pkg, boundsPx: bounds));
+      specs.add(widgetId != null
+          ? AppWindowSpec(slotId: r.slotId, packageName: '', boundsPx: bounds, widgetId: widgetId)
+          : AppWindowSpec(slotId: r.slotId, packageName: pkg!, boundsPx: bounds));
     }
     try {
       await NativeBridge.syncAppWindows(specs, pillPx: _pillPx());
@@ -182,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onLiveWindowLongPress(String slotId) {
-    _withWindowsHidden(() => _pickApp(slotById(slotId)));
+    _withWindowsHidden(() => _pickContent(slotById(slotId)));
   }
 
   // ---------- меню пилюли ----------
@@ -234,15 +240,72 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // ---------- назначение ----------
 
+  /// Выбор содержимого окна. В системном режиме — приложение или виджет
+  /// рабочего стола; в запасном режиме — только приложение.
+  Future<void> _pickContent(PresetSlot slot) async {
+    if (!_liveMode) return _pickApp(slot);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.apps_rounded),
+              title: const Text('Приложение'),
+              subtitle: const Text('Живое окно приложения'),
+              onTap: () => Navigator.of(ctx).pop('app'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.widgets_rounded),
+              title: const Text('Виджет'),
+              subtitle: const Text('Виджет рабочего стола (например, TPMS)'),
+              onTap: () => Navigator.of(ctx).pop('widget'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'widget') {
+      await _pickWidget(slot);
+    } else {
+      await _pickApp(slot);
+    }
+  }
+
   Future<void> _pickApp(PresetSlot slot) async {
     final presets = context.read<PresetService>();
     final app = await Navigator.of(context).push<AppInfo>(
       MaterialPageRoute(builder: (_) => AppPickerScreen(title: '«${slot.hint}»: выбор приложения')),
     );
     if (app == null) return;
+    final oldWidget = presets.widgetFor(slot.id);
     await presets.assign(slot.id, app.packageName);
+    if (oldWidget != null) NativeBridge.deleteWidget(oldWidget).catchError((_) {});
     if (!mounted) return;
     setState(() => _apps = {..._apps, app.packageName: app});
+  }
+
+  Future<void> _pickWidget(PresetSlot slot) async {
+    final presets = context.read<PresetService>();
+    final messenger = ScaffoldMessenger.of(context);
+    final w = await Navigator.of(context).push<WidgetProvider>(
+      MaterialPageRoute(builder: (_) => WidgetPickerScreen(title: '«${slot.hint}»: выбор виджета')),
+    );
+    if (w == null) return;
+    int? id;
+    try {
+      id = await NativeBridge.bindWidget(w.provider);
+    } on PlatformException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Не удалось добавить виджет: ${e.message}')));
+      return;
+    }
+    if (id == null) return; // настройку виджета отменили
+    final oldWidget = presets.widgetFor(slot.id);
+    await presets.assignWidget(slot.id, id, w.label);
+    if (oldWidget != null && oldWidget != id) NativeBridge.deleteWidget(oldWidget).catchError((_) {});
+    if (mounted) setState(() {});
   }
 
   void _appMissing() {
@@ -257,7 +320,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final slot = slotById(slotId);
     final pkg = context.read<PresetService>().packageFor(slotId);
     if (pkg == null) {
-      if (pickIfEmpty) await _withWindowsHidden(() => _pickApp(slot));
+      if (pickIfEmpty) await _withWindowsHidden(() => _pickContent(slot));
       return true;
     }
     if (_liveMode && !_editing) {
@@ -269,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final ok = await NativeBridge.launchAppInBounds(pkg, bounds);
     if (!ok && mounted && pickIfEmpty) {
       _appMissing();
-      await _withWindowsHidden(() => _pickApp(slot));
+      await _withWindowsHidden(() => _pickContent(slot));
     }
     return ok;
   }
@@ -278,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_layingOut) return;
     final presets = context.read<PresetService>();
     final ids = _layout.map((r) => r.slotId).toList();
-    if (!ids.any((id) => presets.packageFor(id) != null)) {
+    if (!ids.any((id) => presets.packageFor(id) != null || presets.widgetFor(id) != null)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Сначала назначьте приложения окнам — нажмите на окно')),
       );
@@ -582,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             child: _windowCard(r.slotId, editing: true),
           ),
-          Positioned(top: 6, left: 6, child: roundBtn(Icons.settings_rounded, () => _pickApp(slot))),
+          Positioned(top: 6, left: 6, child: roundBtn(Icons.settings_rounded, () => _pickContent(slot))),
           Positioned(top: 6, right: 6, child: roundBtn(Icons.delete_outline_rounded, () => _removeWindow(r.slotId))),
           Positioned(
             right: 0,
@@ -616,7 +679,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _appIcon(String slotId, double size) {
-    final pkg = context.read<PresetService>().packageFor(slotId);
+    final presets = context.read<PresetService>();
+    if (presets.widgetFor(slotId) != null) {
+      return Icon(Icons.widgets_rounded, size: size * 0.7, color: Theme.of(context).colorScheme.primary);
+    }
+    final pkg = presets.packageFor(slotId);
     final app = pkg == null ? null : _apps[pkg];
     if (app != null) return Image.memory(app.icon, width: size, height: size, gaplessPlayback: true);
     return Icon(Icons.add_rounded, size: size * 0.7, color: Theme.of(context).colorScheme.primary);
@@ -625,13 +692,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _windowCard(String slotId, {bool editing = false}) {
     final theme = Theme.of(context);
     final slot = slotById(slotId);
-    final pkg = context.read<PresetService>().packageFor(slotId);
+    final presets = context.read<PresetService>();
+    final widgetId = presets.widgetFor(slotId);
+    final pkg = presets.packageFor(slotId);
     final app = pkg == null ? null : _apps[pkg];
     final missing = pkg != null && _appsLoaded && app == null;
 
+    // Виджет в системном режиме рисуется нативно поверх; у многих виджетов
+    // прозрачный фон — под ним должны быть обои, а не карточка с текстом.
+    if (widgetId != null && _liveMode && !editing) {
+      return SizedBox.expand(key: _keys[slotId]);
+    }
+
     final String title;
     final String subtitle;
-    if (pkg == null) {
+    if (widgetId != null) {
+      title = presets.widgetLabelFor(slotId) ?? 'Виджет';
+      subtitle = editing ? 'тяните — переместить, уголок — размер' : 'Виджет';
+    } else if (pkg == null) {
       title = slot.hint;
       subtitle = editing ? '⚙ — выбрать приложение' : 'Нажмите, чтобы выбрать приложение';
     } else if (missing) {
@@ -678,12 +756,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           : InkWell(
               onTap: () {
                 if (_liveMode) {
-                  _withWindowsHidden(() => _pickApp(slot));
+                  _withWindowsHidden(() => _pickContent(slot));
                 } else {
                   _openWindow(slotId);
                 }
               },
-              onLongPress: () => _withWindowsHidden(() => _pickApp(slot)),
+              onLongPress: () => _withWindowsHidden(() => _pickContent(slot)),
               child: content,
             ),
     );

@@ -3,6 +3,47 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+/// Белые часы с тенью для пилюли поверх окон (читаются и на карте).
+class PillClock extends StatefulWidget {
+  const PillClock({super.key});
+
+  @override
+  State<PillClock> createState() => _PillClockState();
+}
+
+class _PillClockState extends State<PillClock> {
+  DateTime _now = DateTime.now();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final now = DateTime.now();
+      if (now.minute != _now.minute) setState(() => _now = now);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      DateFormat.Hm().format(_now),
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        shadows: [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(0, 1))],
+      ),
+    );
+  }
+}
+
 /// Компактные часы для дока.
 class DockClock extends StatefulWidget {
   const DockClock({super.key});

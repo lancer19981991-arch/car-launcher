@@ -41,10 +41,17 @@ class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
 
     private val appWindowHost by lazy {
-        AppWindowHost(this) { slotId ->
-            // Долгое нажатие по живому окну — просим Flutter открыть выбор.
-            runOnUiThread { channel?.invokeMethod("onWindowLongPress", slotId) }
-        }
+        AppWindowHost(
+            this,
+            onLongPress = { slotId ->
+                // Долгое нажатие по живому окну — просим Flutter открыть выбор.
+                runOnUiThread { channel?.invokeMethod("onWindowLongPress", slotId) }
+            },
+            onPillTap = {
+                // Нажатие на пилюлю с часами — открыть меню во Flutter.
+                runOnUiThread { channel?.invokeMethod("onPillTap", null) }
+            },
+        )
     }
 
     override fun onPause() {
@@ -95,7 +102,16 @@ class MainActivity : FlutterActivity() {
                                 height = (m["height"] as? Int) ?: 0,
                             )
                         }
-                        result.success(appWindowHost.sync(specs))
+                        val p = call.argument<Map<String, Any>>("pill")
+                        val pill = p?.let {
+                            AppWindowHost.PillSpec(
+                                left = (it["left"] as? Int) ?: 0,
+                                top = (it["top"] as? Int) ?: 0,
+                                width = (it["width"] as? Int) ?: 0,
+                                height = (it["height"] as? Int) ?: 0,
+                            )
+                        }
+                        result.success(appWindowHost.sync(specs, pill))
                     }
                     "clearAppWindows" -> {
                         appWindowHost.clear()

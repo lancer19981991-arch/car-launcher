@@ -14,11 +14,10 @@ import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
 import 'settings_screen.dart';
 
-/// Главный экран: тонкая верхняя полоса и холст с окнами. Каждое окно
-/// стоит в своих координатах (свободная раскладка), в нём своё
-/// приложение: живым окном (системный режим) или свободным окном
-/// (запасной режим). В режиме «Изменить» окна двигаются, тянутся за
-/// уголок по ширине и высоте, добавляются и удаляются.
+/// Главный экран: весь экран — холст с окнами (свободная раскладка).
+/// Поверх — маленькая полупрозрачная «пилюля» с часами и шестерёнкой;
+/// нажатие открывает меню (правка раскладки, настройки). В режиме правки
+/// окна двигаются и тянутся за уголок, пилюля тоже перетаскивается.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -27,8 +26,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  static const double _gap = 4; // отступ внутри каждой ячейки окна
+  static const double _gap = 3; // отступ внутри каждой ячейки окна
   static const int _maxWindows = 4;
+  static const double _pillW = 104;
+  static const double _pillH = 38;
 
   Map<String, AppInfo> _apps = const {};
   bool _appsLoaded = false;
@@ -37,21 +38,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   LiveWindowsStatus? _live;
   bool get _liveMode => _live?.available == true;
 
-  /// Ключи окон по slotId — по ним считаются координаты для запуска.
   final Map<String, GlobalKey> _keys = {for (final s in kWindowSlots) s.id: GlobalKey()};
+  final GlobalKey _canvasKey = GlobalKey();
 
   static bool _autoLayoutDone = false;
   bool _layingOut = false;
   bool _editing = false;
+  bool _menuOpen = false;
 
-  /// Черновик раскладки, пока идёт правка (сохраняется по окончании жеста).
+  /// Черновики, пока идёт правка.
   List<WindowRect>? _draft;
+  Offset? _pillDraft;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     NativeBridge.onWindowLongPress = _onLiveWindowLongPress;
+    NativeBridge.onPillTap = _showMenu;
     NativeBridge.ensureIncomingHandler();
     _init();
   }
@@ -59,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     NativeBridge.onWindowLongPress = null;
+    NativeBridge.onPillTap = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -69,12 +74,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _loadApps();
       _loadFreeformStatus();
       _loadLiveStatus().then((_) {
-        if (_liveMode && !_editing) _scheduleSync();
+        if (_liveMode && !_editing && !_menuOpen) _scheduleSync();
       });
     }
   }
 
   List<WindowRect> get _layout => _draft ?? context.read<SettingsService>().windowLayout;
+  Offset get _pillAlign => _pillDraft ?? context.read<SettingsService>().pillAlign;
 
   void _scheduleSync() =>
       WidgetsBinding.instance.addPostFrameCallback((_) => _syncLiveWindows());
@@ -116,19 +122,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
-  // ---------- живые окна ----------
+  // ---------- координаты ----------
 
-  /// Границы окна в физических пикселях экрана лаунчера.
+  double get _dpr => MediaQuery.devicePixelRatioOf(context);
+
   Rect? _boundsPx(String slotId) {
     final box = _keys[slotId]?.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return null;
-    final dpr = MediaQuery.devicePixelRatioOf(context);
     final topLeft = box.localToGlobal(Offset.zero);
-    return Rect.fromLTWH(topLeft.dx * dpr, topLeft.dy * dpr, box.size.width * dpr, box.size.height * dpr);
+    return Rect.fromLTWH(topLeft.dx * _dpr, topLeft.dy * _dpr, box.size.width * _dpr, box.size.height * _dpr);
   }
 
+  /// Положение пилюли внутри холста (логические px).
+  Offset _pillOffset(double areaW, double areaH) {
+    final a = _pillAlign;
+    return Offset(a.dx * (areaW - _pillW).clamp(0, double.infinity), a.dy * (areaH - _pillH).clamp(0, double.infinity));
+  }
+
+  /// Положение пилюли в физических px экрана — для нативной пилюли.
+  Rect? _pillPx() {
+    final box = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    final origin = box.localToGlobal(Offset.zero);
+    final o = _pillOffset(box.size.width, box.size.height);
+    return Rect.fromLTWH((origin.dx + o.dx) * _dpr, (origin.dy + o.dy) * _dpr, _pillW * _dpr, _pillH * _dpr);
+  }
+
+  // ---------- живые окна ----------
+
   Future<void> _syncLiveWindows() async {
-    if (!_liveMode || _editing || !mounted) return;
+    if (!_liveMode || _editing || _menuOpen || !mounted) return;
     final presets = context.read<PresetService>();
     final specs = <AppWindowSpec>[];
     for (final r in _layout) {
@@ -139,24 +162,74 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       specs.add(AppWindowSpec(slotId: r.slotId, packageName: pkg, boundsPx: bounds));
     }
     try {
-      await NativeBridge.syncAppWindows(specs);
+      await NativeBridge.syncAppWindows(specs, pillPx: _pillPx());
+    } catch (_) {}
+  }
+
+  Future<void> _hideLive() async {
+    if (!_liveMode) return;
+    try {
+      await NativeBridge.clearAppWindows();
     } catch (_) {}
   }
 
   /// Живые окна — нативные View поверх Flutter, они перекрыли бы экраны
   /// выбора и настроек. Убираем их на время действия и возвращаем.
   Future<void> _withWindowsHidden(Future<void> Function() action) async {
-    if (_liveMode) {
-      try {
-        await NativeBridge.clearAppWindows();
-      } catch (_) {}
-    }
+    await _hideLive();
     await action();
     if (_liveMode && mounted && !_editing) _scheduleSync();
   }
 
   void _onLiveWindowLongPress(String slotId) {
     _withWindowsHidden(() => _pickApp(slotById(slotId)));
+  }
+
+  // ---------- меню пилюли ----------
+
+  Future<void> _showMenu() async {
+    if (_menuOpen || !mounted) return;
+    _menuOpen = true;
+    await _hideLive();
+    if (!mounted) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.dashboard_customize_rounded),
+              title: const Text('Изменить раскладку окон'),
+              onTap: () => Navigator.of(ctx).pop('edit'),
+            ),
+            if (!_liveMode)
+              ListTile(
+                leading: const Icon(Icons.dashboard_rounded),
+                title: const Text('Разложить окна'),
+                onTap: () => Navigator.of(ctx).pop('layout'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.settings_rounded),
+              title: const Text('Настройки'),
+              onTap: () => Navigator.of(ctx).pop('settings'),
+            ),
+          ],
+        ),
+      ),
+    );
+    _menuOpen = false;
+    if (!mounted) return;
+    switch (choice) {
+      case 'edit':
+        if (!_editing) await _toggleEditing();
+      case 'settings':
+        await _openSettings();
+      case 'layout':
+        await _layoutAllWindows();
+      default:
+        if (_liveMode && !_editing) _scheduleSync();
+    }
   }
 
   // ---------- назначение ----------
@@ -233,20 +306,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final settings = context.read<SettingsService>();
     if (_editing) {
       final draft = _draft;
+      final pill = _pillDraft;
       setState(() {
         _editing = false;
         _draft = null;
+        _pillDraft = null;
       });
       if (draft != null) await settings.setWindowLayout(draft);
+      if (pill != null) await settings.setPillAlign(pill);
       _scheduleSync();
     } else {
       setState(() {
         _editing = true;
         _draft = [...settings.windowLayout];
+        _pillDraft = settings.pillAlign;
       });
-      try {
-        await NativeBridge.clearAppWindows();
-      } catch (_) {}
+      await _hideLive();
     }
   }
 
@@ -321,19 +396,131 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     context.watch<PresetService>();
     context.watch<SettingsService>();
-    final showFreeformWarning = !_liveMode && _freeform != null && !_freeform!.supported;
-
     return Scaffold(
-      body: WallpaperBackground(
+      body: WallpaperBackground(child: _buildCanvas()),
+    );
+  }
+
+  Widget _buildCanvas() {
+    final layout = _layout;
+    final showFreeformWarning = !_liveMode && _freeform != null && !_freeform!.supported;
+    // В системном режиме пилюлю рисует нативная сторона (поверх живых
+    // окон). Flutter-пилюля — в правке и в запасном режиме.
+    final showFlutterPill = _editing || !_liveMode;
+
+    return LayoutBuilder(
+      key: _canvasKey,
+      builder: (context, c) {
+        final areaW = c.maxWidth;
+        final areaH = c.maxHeight;
+        final pillPos = _pillOffset(areaW, areaH);
+        return Stack(
+          children: [
+            if (_editing) Positioned.fill(child: _gridBackdrop()),
+            for (final r in layout)
+              Positioned(
+                left: r.x * areaW,
+                top: r.y * areaH,
+                width: r.w * areaW,
+                height: r.h * areaH,
+                child: Padding(
+                  padding: const EdgeInsets.all(_gap),
+                  child: _editing ? _editableWindow(r, areaW, areaH) : _windowCard(r.slotId),
+                ),
+              ),
+            if (showFreeformWarning && !_editing)
+              Positioned(left: 8, right: 8, bottom: 8, child: _freeformWarning()),
+            if (showFlutterPill)
+              Positioned(
+                left: pillPos.dx,
+                top: pillPos.dy,
+                width: _pillW,
+                height: _pillH,
+                child: _editing ? _draggablePill(areaW, areaH) : _pill(onTap: _showMenu),
+              ),
+            if (_editing) Positioned(left: 0, right: 0, bottom: 12, child: _editToolbar()),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _pill({VoidCallback? onTap, bool highlighted = false}) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.35),
+      shape: StadiumBorder(
+        side: highlighted
+            ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 2)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            PillClock(),
+            SizedBox(width: 6),
+            Icon(Icons.settings_rounded, color: Colors.white, size: 20,
+                shadows: [Shadow(color: Colors.black, blurRadius: 4)]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _draggablePill(double areaW, double areaH) {
+    final freeW = (areaW - _pillW).clamp(1.0, double.infinity);
+    final freeH = (areaH - _pillH).clamp(1.0, double.infinity);
+    return GestureDetector(
+      onPanUpdate: (d) => setState(() {
+        final a = _pillAlign;
+        _pillDraft = Offset(
+          (a.dx + d.delta.dx / freeW).clamp(0.0, 1.0),
+          (a.dy + d.delta.dy / freeH).clamp(0.0, 1.0),
+        );
+      }),
+      child: _pill(highlighted: true),
+    );
+  }
+
+  Widget _editToolbar() {
+    final canAdd = (_draft?.length ?? 0) < _maxWindows;
+    final style = FilledButton.styleFrom(
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+    );
+    return Center(
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.55),
+        shape: const StadiumBorder(),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          padding: const EdgeInsets.all(6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _buildTopBar(),
-              if (showFreeformWarning) Padding(padding: const EdgeInsets.only(top: 4), child: _freeformWarning()),
-              const SizedBox(height: 4),
-              Expanded(child: _buildCanvas()),
+              if (canAdd) ...[
+                FilledButton.tonalIcon(
+                  style: style,
+                  onPressed: _addWindow,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Окно'),
+                ),
+                const SizedBox(width: 6),
+              ],
+              FilledButton.tonalIcon(
+                style: style,
+                onPressed: _openSettings,
+                icon: const Icon(Icons.settings_rounded, size: 18),
+                label: const Text('Настройки'),
+              ),
+              const SizedBox(width: 6),
+              FilledButton.icon(
+                style: style,
+                onPressed: _toggleEditing,
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Готово'),
+              ),
             ],
           ),
         ),
@@ -357,96 +544,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  static final ButtonStyle _compactBtn = FilledButton.styleFrom(
-    visualDensity: VisualDensity.compact,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  );
-
-  Widget _buildTopBar() {
-    final theme = Theme.of(context);
-    final canAdd = _editing && (_draft?.length ?? 0) < _maxWindows;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      decoration: BoxDecoration(color: theme.cardTheme.color, borderRadius: BorderRadius.circular(18)),
-      child: Row(
-        children: [
-          const DockClock(),
-          const Spacer(),
-          if (canAdd) ...[
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: _addWindow,
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('Окно'),
-            ),
-            const SizedBox(width: 6),
-          ],
-          if (_liveMode || _editing)
-            FilledButton.icon(
-              style: _compactBtn,
-              onPressed: _toggleEditing,
-              icon: Icon(_editing ? Icons.check_rounded : Icons.edit_rounded, size: 16),
-              label: Text(_editing ? 'Готово' : 'Изменить'),
-            )
-          else ...[
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Изменить раскладку',
-              icon: const Icon(Icons.edit_rounded, size: 20),
-              onPressed: _toggleEditing,
-            ),
-            FilledButton.icon(
-              style: _compactBtn,
-              onPressed: _layingOut ? null : _layoutAllWindows,
-              icon: _layingOut
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.dashboard_rounded, size: 16),
-              label: const Text('Разложить'),
-            ),
-          ],
-          const SizedBox(width: 2),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Настройки',
-            icon: const Icon(Icons.settings_rounded, size: 22),
-            onPressed: _openSettings,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCanvas() {
-    final layout = _layout;
-    return LayoutBuilder(
-      builder: (context, c) {
-        final areaW = c.maxWidth;
-        final areaH = c.maxHeight;
-        return Stack(
-          children: [
-            if (_editing) Positioned.fill(child: _gridBackdrop()),
-            for (final r in layout)
-              Positioned(
-                left: r.x * areaW,
-                top: r.y * areaH,
-                width: r.w * areaW,
-                height: r.h * areaH,
-                child: Padding(
-                  padding: const EdgeInsets.all(_gap),
-                  child: _editing ? _editableWindow(r, areaW, areaH) : _windowCard(r.slotId),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
   /// Еле заметная сетка в режиме правки — подсказывает привязку.
   Widget _gridBackdrop() {
     final color = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06);
@@ -457,7 +554,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final theme = Theme.of(context);
     final slot = slotById(r.slotId);
 
-    Widget roundBtn(IconData icon, VoidCallback onTap, {String? tip}) => Material(
+    Widget roundBtn(IconData icon, VoidCallback onTap) => Material(
           color: theme.colorScheme.surface.withValues(alpha: 0.9),
           shape: const CircleBorder(),
           elevation: 2,
@@ -469,7 +566,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
 
     return GestureDetector(
-      // Перетаскивание всего окна.
       onPanStart: (_) => _updateDraft(r.slotId, (x) => x, toFront: true),
       onPanUpdate: (d) => _updateDraft(
         r.slotId,
@@ -486,17 +582,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             child: _windowCard(r.slotId, editing: true),
           ),
-          Positioned(
-            top: 6,
-            left: 6,
-            child: roundBtn(Icons.settings_rounded, () => _pickApp(slot)),
-          ),
-          Positioned(
-            top: 6,
-            right: 6,
-            child: roundBtn(Icons.delete_outline_rounded, () => _removeWindow(r.slotId)),
-          ),
-          // Уголок: изменение размера по ширине и высоте.
+          Positioned(top: 6, left: 6, child: roundBtn(Icons.settings_rounded, () => _pickApp(slot))),
+          Positioned(top: 6, right: 6, child: roundBtn(Icons.delete_outline_rounded, () => _removeWindow(r.slotId))),
           Positioned(
             right: 0,
             bottom: 0,
@@ -552,7 +639,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       subtitle = 'Приложение удалено';
     } else {
       title = app?.label ?? slot.hint;
-      subtitle = editing ? 'тяните — переместить, уголок — размер' : (_liveMode ? 'Живое окно' : 'Нажмите, чтобы открыть в окне');
+      subtitle = editing
+          ? 'тяните — переместить, уголок — размер'
+          : (_liveMode ? 'Живое окно' : 'Нажмите, чтобы открыть в окне');
     }
 
     final content = Padding(

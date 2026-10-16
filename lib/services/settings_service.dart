@@ -21,6 +21,28 @@ class SettingsService extends ChangeNotifier {
   static const _kBottomReserveKey = 'bottom_reserve';
   static const _kTopReserveKey = 'top_reserve';
   static const _kLayoutKey = 'window_layout_v1';
+  static const _kPillKey = 'pill_align';
+
+  /// Положение «пилюли» с часами: доли свободного места по X и Y
+  /// (0 — левый/верхний край, 1 — правый/нижний). По умолчанию — правый
+  /// верхний угол.
+  Offset get pillAlign {
+    final raw = _prefs.getString(_kPillKey);
+    if (raw != null) {
+      final parts = raw.split(',');
+      if (parts.length == 2) {
+        final x = double.tryParse(parts[0]);
+        final y = double.tryParse(parts[1]);
+        if (x != null && y != null) return Offset(x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
+      }
+    }
+    return const Offset(1, 0);
+  }
+
+  Future<void> setPillAlign(Offset a) async {
+    await _prefs.setString(_kPillKey, '${a.dx.clamp(0.0, 1.0)},${a.dy.clamp(0.0, 1.0)}');
+    notifyListeners();
+  }
 
   /// Раскладка окон: где стоит и какого размера каждое окно.
   /// Если свободной раскладки ещё нет — строим её из прежних настроек

@@ -5,13 +5,19 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextClock
 
 /**
  * Встраивание ЖИВЫХ окон чужих приложений в экран лаунчера — так же,
@@ -34,7 +40,66 @@ import android.widget.FrameLayout
 class AppWindowHost(
     private val activity: Activity,
     private val onLongPress: (slotId: String) -> Unit = {},
+    private val onPillTap: () -> Unit = {},
 ) {
+
+    /** Положение и размер «пилюли» с часами (px экрана). */
+    data class PillSpec(val left: Int, val top: Int, val width: Int, val height: Int)
+
+    /** Пилюля с часами и шестерёнкой — лежит ПОВЕРХ живых окон. */
+    private var pill: LinearLayout? = null
+
+    private fun ensurePill(overlay: FrameLayout): LinearLayout {
+        pill?.let { return it }
+        val density = activity.resources.displayMetrics.density
+        val ll = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = 20f * density
+                setColor(0x59000000) // чёрный ~35% — почти прозрачный
+            }
+            setOnClickListener { onPillTap() }
+        }
+        val clock = TextClock(activity).apply {
+            format24Hour = "HH:mm"
+            format12Hour = "HH:mm"
+            setTextColor(Color.WHITE)
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
+        }
+        val gear = ImageView(activity).apply {
+            setImageResource(android.R.drawable.ic_menu_preferences)
+            setColorFilter(Color.WHITE)
+        }
+        ll.addView(clock)
+        ll.addView(
+            gear,
+            LinearLayout.LayoutParams((20 * density).toInt(), (20 * density).toInt()).apply {
+                leftMargin = (6 * density).toInt()
+            },
+        )
+        overlay.addView(ll, FrameLayout.LayoutParams(0, 0))
+        pill = ll
+        return ll
+    }
+
+    private fun syncPill(overlay: FrameLayout, spec: PillSpec?) {
+        if (spec == null) {
+            pill?.let { overlay.removeView(it) }
+            pill = null
+            return
+        }
+        val p = ensurePill(overlay)
+        val lp = p.layoutParams as FrameLayout.LayoutParams
+        lp.leftMargin = spec.left
+        lp.topMargin = spec.top
+        lp.width = spec.width
+        lp.height = spec.height
+        p.layoutParams = lp
+        p.bringToFront() // всегда поверх окон
+    }
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -159,9 +224,19 @@ class AppWindowHost(
      * false — если устройство/подпись не поддерживают (вызывающая
      * сторона тогда откатывается на свободные окна).
      */
-    fun sync(specs: List<WindowSpec>): Boolean {
+    fun sync(specs: List<WindowSpec>, pillSpec: PillSpec? = null): Boolean {
         if (!isAvailable()) return false
         val overlay = ensureOverlay()
+        try {
+            syncWindows(overlay, specs)
+        } finally {
+            // Пилюля добавляется/поднимается после окон — она всегда сверху.
+            syncPill(overlay, pillSpec)
+        }
+        return true
+    }
+
+    private fun syncWindows(overlay: FrameLayout, specs: List<WindowSpec>) {
 
         val wanted = specs.associateBy { it.slotId }
 
@@ -181,7 +256,6 @@ class AppWindowHost(
                 applyBounds(existing.frame, spec)
             }
         }
-        return true
     }
 
     private fun addWindow(overlay: FrameLayout, spec: WindowSpec) {
@@ -268,8 +342,10 @@ class AppWindowHost(
         overlay?.removeView(entry.frame)
     }
 
-    /** Убрать все живые окна (например, при уходе лаунчера в фон). */
+    /** Убрать все живые окна и пилюлю (уход в фон, правка, настройки). */
     fun clear() {
         for (id in windows.keys.toList()) removeWindow(id)
+        pill?.let { overlay?.removeView(it) }
+        pill = null
     }
 }

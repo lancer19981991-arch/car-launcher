@@ -38,6 +38,9 @@ class NativeBridge {
   /// (slotId окна). Назначается экраном лаунчера.
   static void Function(String slotId)? onWindowLongPress;
 
+  /// Нажатие на нативную пилюлю с часами (поверх живых окон).
+  static void Function()? onPillTap;
+
   static bool _handlerSet = false;
 
   /// Подписаться на входящие вызовы из нативной стороны (один раз).
@@ -48,6 +51,8 @@ class NativeBridge {
       if (call.method == 'onWindowLongPress') {
         final slotId = call.arguments as String?;
         if (slotId != null) onWindowLongPress?.call(slotId);
+      } else if (call.method == 'onPillTap') {
+        onPillTap?.call();
       }
       return null;
     });
@@ -108,9 +113,16 @@ class NativeBridge {
   /// Показать живые окна приложений в заданных областях (px экрана
   /// лаунчера). Возвращает true, если встраивание применено; false —
   /// если устройство/подпись его не поддерживают.
-  static Future<bool> syncAppWindows(List<AppWindowSpec> windows) async {
+  static Future<bool> syncAppWindows(List<AppWindowSpec> windows, {Rect? pillPx}) async {
     final ok = await _channel.invokeMethod<bool>('syncAppWindows', {
       'windows': [for (final w in windows) w.toMap()],
+      if (pillPx != null)
+        'pill': {
+          'left': pillPx.left.round(),
+          'top': pillPx.top.round(),
+          'width': pillPx.width.round(),
+          'height': pillPx.height.round(),
+        },
     });
     return ok ?? false;
   }

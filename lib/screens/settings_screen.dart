@@ -49,9 +49,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Раскладка окон настраивается на главном экране кнопкой '
-                    '«Изменить»: окно тянется — перемещается, уголок — меняет '
-                    'размер, «+ Окно» — добавить (до 4), корзина — убрать.',
+                    'Раскладка окон: нажмите пилюлю с часами → «Изменить '
+                    'раскладку». Окно тянется — перемещается, уголок — меняет '
+                    'размер, «+ Окно» — добавить (до 4), корзина — убрать. '
+                    'Пилюлю с часами тоже можно перетащить.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                         ),

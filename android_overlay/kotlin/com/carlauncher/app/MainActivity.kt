@@ -87,9 +87,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Уходя в фон, снимаем живые окна, чтобы их виртуальные дисплеи
-        // не висели поверх запущенного на весь экран приложения.
-        appWindowHost.clear()
+        // Уходя в фон: по умолчанию окна уничтожаются — иначе приложение,
+        // живущее в окне, при запуске из другого места может «открыться»
+        // на спрятанном дисплее окна. По настройке — только прячем.
+        val keep = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+            .getBoolean("flutter.keep_windows_bg", false)
+        if (keep) appWindowHost.hide() else appWindowHost.clear()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -175,6 +178,10 @@ class MainActivity : FlutterActivity() {
                     }
                     "deleteWidget" -> {
                         call.argument<Int>("widgetId")?.let { widgetSupport.delete(it) }
+                        result.success(null)
+                    }
+                    "hideAppWindows" -> {
+                        appWindowHost.hide()
                         result.success(null)
                     }
                     "clearAppWindows" -> {

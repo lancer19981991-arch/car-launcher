@@ -175,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _hideLive() async {
     if (!_liveMode) return;
     try {
-      await NativeBridge.clearAppWindows();
+      await NativeBridge.hideAppWindows();
     } catch (_) {}
   }
 

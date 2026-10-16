@@ -237,6 +237,7 @@ class AppWindowHost(
     fun sync(specs: List<WindowSpec>, pillSpec: PillSpec? = null): Boolean {
         if (!isAvailable()) return false
         val overlay = ensureOverlay()
+        overlay.visibility = View.VISIBLE
         try {
             syncWindows(overlay, specs)
         } finally {
@@ -380,7 +381,15 @@ class AppWindowHost(
         overlay?.removeView(entry.frame)
     }
 
-    /** Убрать все живые окна и пилюлю (уход в фон, правка, настройки). */
+    /**
+     * Спрятать окна, не уничтожая их: приложения внутри остаются
+     * запущенными и не перезапускаются. Следующий sync() покажет их снова.
+     */
+    fun hide() {
+        overlay?.visibility = View.GONE
+    }
+
+    /** Уничтожить все живые окна и пилюлю. */
     fun clear() {
         for (id in windows.keys.toList()) removeWindow(id)
         pill?.let { overlay?.removeView(it) }

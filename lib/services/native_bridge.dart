@@ -137,6 +137,12 @@ class NativeBridge {
     return ok ?? false;
   }
 
+  /// Спрятать живые окна, не перезапуская приложения в них
+  /// (вернутся при следующем syncAppWindows).
+  static Future<void> hideAppWindows() async {
+    await _channel.invokeMethod('hideAppWindows');
+  }
+
   /// Убрать все живые окна.
   static Future<void> clearAppWindows() async {
     await _channel.invokeMethod('clearAppWindows');

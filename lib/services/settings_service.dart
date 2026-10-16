@@ -22,6 +22,16 @@ class SettingsService extends ChangeNotifier {
   static const _kTopReserveKey = 'top_reserve';
   static const _kLayoutKey = 'window_layout_v1';
   static const _kPillKey = 'pill_align';
+  static const _kKeepBgKey = 'keep_windows_bg';
+
+  /// Не закрывать приложения в окнах, когда лаунчер уходит в фон.
+  /// Ключ читается и нативной стороной (MainActivity.onPause).
+  bool get keepWindowsInBackground => _prefs.getBool(_kKeepBgKey) ?? false;
+
+  Future<void> setKeepWindowsInBackground(bool v) async {
+    await _prefs.setBool(_kKeepBgKey, v);
+    notifyListeners();
+  }
 
   /// Положение «пилюли» с часами: доли свободного места по X и Y
   /// (0 — левый/верхний край, 1 — правый/нижний). По умолчанию — правый

@@ -85,6 +85,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     label: '${settings.topReserve.round()}',
                     onChanged: (v) => settings.setTopReserve(v),
                   ),
+                  const Divider(height: 24),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Не перезапускать окна при выходе из лаунчера'),
+                    subtitle: const Text(
+                      'Приложения в окнах продолжат работать, пока открыто другое '
+                      'приложение. Экспериментально: если приложение из окна, '
+                      'запущенное отдельно, не появляется на экране — выключите.',
+                    ),
+                    value: settings.keepWindowsInBackground,
+                    onChanged: (v) => settings.setKeepWindowsInBackground(v),
+                  ),
                 ],
               ),
             ),

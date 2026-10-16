@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/window_rect.dart';
+
 /// Хранит пользовательские настройки лаунчера на устройстве
 /// (тема, выбранный вариант фона и т.п.) через SharedPreferences.
 class SettingsService extends ChangeNotifier {
@@ -18,6 +20,44 @@ class SettingsService extends ChangeNotifier {
   static const _kWeightsKey = 'window_weights';
   static const _kBottomReserveKey = 'bottom_reserve';
   static const _kTopReserveKey = 'top_reserve';
+  static const _kLayoutKey = 'window_layout_v1';
+
+  /// Раскладка окон: где стоит и какого размера каждое окно.
+  /// Если свободной раскладки ещё нет — строим её из прежних настроек
+  /// (окна стопкой, верхнее крупнее), чтобы у пользователя ничего не
+  /// поменялось после обновления.
+  List<WindowRect> get windowLayout {
+    final saved = WindowRect.decodeList(_prefs.getString(_kLayoutKey));
+    if (saved != null) return saved;
+    return defaultLayout(windowCount, windowWeights);
+  }
+
+  Future<void> setWindowLayout(List<WindowRect> layout) async {
+    await _prefs.setString(_kLayoutKey, WindowRect.encodeList(layout));
+    notifyListeners();
+  }
+
+  Future<void> resetWindowLayout() async {
+    await _prefs.remove(_kLayoutKey);
+    await _prefs.remove(_kWeightsKey);
+    await _prefs.remove(_kWindowCountKey);
+    notifyListeners();
+  }
+
+  /// Окна стопкой по вертикали во всю ширину, высоты по весам.
+  static List<WindowRect> defaultLayout(int count, List<double> weights) {
+    final ids = ['window_1', 'window_2', 'window_3'];
+    final ws = weights.take(count).toList();
+    final total = ws.fold<double>(0, (a, b) => a + b);
+    var y = 0.0;
+    final out = <WindowRect>[];
+    for (var i = 0; i < count; i++) {
+      final h = ws[i] / total;
+      out.add(WindowRect(slotId: ids[i], x: 0, y: y, w: 1, h: h));
+      y += h;
+    }
+    return out;
+  }
 
   /// Запас снизу (лог. px): чтобы окна не заезжали под климат-панель.
   double get bottomReserve => (_prefs.getDouble(_kBottomReserveKey) ?? 150.0).clamp(0.0, 400.0);

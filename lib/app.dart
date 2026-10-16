@@ -27,6 +27,19 @@ class CarLauncherApp extends StatelessWidget {
             theme: AppTheme.light(),
             darkTheme: AppTheme.dark(),
             themeMode: settings.themeMode,
+            // Запас сверху/снизу применяется ко ВСЕМ экранам сразу:
+            // главному, настройкам, выбору приложений, диалогам — чтобы
+            // ничего не заходило под системную панель климата магнитолы.
+            builder: (context, child) => ColoredBox(
+              color: Colors.black,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  top: settings.topReserve,
+                  bottom: settings.bottomReserve,
+                ),
+                child: child,
+              ),
+            ),
             home: const HomeScreen(),
           );
         },

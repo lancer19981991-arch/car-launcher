@@ -48,30 +48,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Количество окон на экране'),
-                  const SizedBox(height: 12),
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 1, label: Text('1')),
-                      ButtonSegment(value: 2, label: Text('2')),
-                      ButtonSegment(value: 3, label: Text('3')),
-                    ],
-                    selected: {settings.windowCount},
-                    onSelectionChanged: (s) => settings.setWindowCount(s.first),
-                  ),
-                  const SizedBox(height: 8),
                   Text(
-                    'Размер окон меняется перетаскиванием разделителей '
-                    'в режиме «Изменить» на главном экране.',
+                    'Раскладка окон настраивается на главном экране кнопкой '
+                    '«Изменить»: окно тянется — перемещается, уголок — меняет '
+                    'размер, «+ Окно» — добавить (до 4), корзина — убрать.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                         ),
                   ),
                   const SizedBox(height: 8),
                   TextButton.icon(
-                    onPressed: () => settings.setWindowWeights(const [2.0, 1.0, 1.0]),
+                    onPressed: () => settings.resetWindowLayout(),
                     icon: const Icon(Icons.restart_alt_rounded),
-                    label: const Text('Сбросить пропорции'),
+                    label: const Text('Сбросить раскладку (3 окна стопкой)'),
                   ),
                   const Divider(height: 24),
                   Text('Запас снизу (под климат-панель): ${settings.bottomReserve.round()} px'),

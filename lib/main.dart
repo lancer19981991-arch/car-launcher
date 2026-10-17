@@ -8,6 +8,39 @@ import 'services/settings_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Если что-то сломается при построении экрана, показываем текст
+  // ошибки, а не пустое серое поле — так проблему видно на фото.
+  ErrorWidget.builder = (details) => Material(
+        color: const Color(0xFF300000),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'Ошибка лаунчера:\n${details.exceptionAsString()}\n\n${details.stack}',
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
+        ),
+      );
+
+  try {
+    await _start();
+  } catch (e, st) {
+    runApp(MaterialApp(
+      home: Scaffold(
+        backgroundColor: const Color(0xFF300000),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Text('Ошибка запуска лаунчера:\n$e\n\n$st',
+                style: const TextStyle(color: Colors.white, fontSize: 14)),
+          ),
+        ),
+      ),
+    ));
+  }
+}
+
+Future<void> _start() async {
+
   // Экран магнитолы вертикальный («тесла»-формат), поэтому закрепляем
   // портретную ориентацию. Раскладка на главном экране всё равно
   // адаптивная и переживёт поворот, но на фиксированном экране так

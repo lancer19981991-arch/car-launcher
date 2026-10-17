@@ -85,8 +85,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<WindowRect> get _layout => _draft ?? context.read<SettingsService>().windowLayout;
   Offset get _pillAlign => _pillDraft ?? context.read<SettingsService>().pillAlign;
 
-  void _scheduleSync() =>
-      WidgetsBinding.instance.addPostFrameCallback((_) => _syncLiveWindows());
+  void _scheduleSync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncLiveWindows());
+    // Колбэк после кадра срабатывает, только если кадр будет. Когда экран
+    // неподвижен (например, через полсекунды после закрытия настроек),
+    // кадр нужно запросить явно — иначе окна так и не покажутся.
+    WidgetsBinding.instance.scheduleFrame();
+  }
 
   Future<void> _init() async {
     await Future.wait([_loadApps(), _loadFreeformStatus(), _loadLiveStatus()]);

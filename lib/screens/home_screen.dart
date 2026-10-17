@@ -63,8 +63,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _init();
   }
 
+  /// Анимация перехода поверх главного экрана (настройки, выбор
+  /// приложения). Пока она идёт, экран масштабирован — мерить окна нельзя.
+  Animation<double>? _routeAnim;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final anim = ModalRoute.of(context)?.secondaryAnimation;
+    if (!identical(anim, _routeAnim)) {
+      _routeAnim?.removeStatusListener(_onRouteAnimStatus);
+      _routeAnim = anim;
+      anim?.addStatusListener(_onRouteAnimStatus);
+    }
+  }
+
+  void _onRouteAnimStatus(AnimationStatus status) {
+    // Экран поверх закрылся полностью — теперь положение окон верное.
+    if (status == AnimationStatus.dismissed && _liveMode && !_editing && !_menuOpen) {
+      _scheduleSync();
+    }
+  }
+
+  /// Главный экран сверху и не в движении.
+  bool get _routeSettled {
+    final route = ModalRoute.of(context);
+    if (route == null) return true;
+    return route.isCurrent && (_routeAnim?.status ?? AnimationStatus.dismissed) == AnimationStatus.dismissed;
+  }
+
   @override
   void dispose() {
+    _routeAnim?.removeStatusListener(_onRouteAnimStatus);
     NativeBridge.onWindowLongPress = null;
     NativeBridge.onPillTap = null;
     WidgetsBinding.instance.removeObserver(this);
@@ -155,6 +185,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _syncLiveWindows() async {
     if (!_liveMode || _editing || _menuOpen || !mounted) return;
+    // Идёт анимация перехода — синхронизируем, когда она закончится
+    // (см. _onRouteAnimStatus), иначе окна встанут со сдвигом.
+    if (!_routeSettled) return;
     final presets = context.read<PresetService>();
     final specs = <AppWindowSpec>[];
     for (final r in _layout) {

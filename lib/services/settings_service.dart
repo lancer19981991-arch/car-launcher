@@ -23,6 +23,16 @@ class SettingsService extends ChangeNotifier {
   static const _kLayoutKey = 'window_layout_v1';
   static const _kPillKey = 'pill_align';
   static const _kKeepBgKey = 'keep_windows_bg';
+  static const _kKeepInLauncherKey = 'keep_windows_in_launcher';
+
+  /// Не перезапускать окна при открытии настроек/меню/выбора приложения
+  /// (только прятать). По умолчанию выключено — так стабильнее.
+  bool get keepWindowsInLauncher => _prefs.getBool(_kKeepInLauncherKey) ?? false;
+
+  Future<void> setKeepWindowsInLauncher(bool v) async {
+    await _prefs.setBool(_kKeepInLauncherKey, v);
+    notifyListeners();
+  }
 
   /// Не закрывать приложения в окнах, когда лаунчер уходит в фон.
   /// Ключ читается и нативной стороной (MainActivity.onPause).

@@ -88,6 +88,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Divider(height: 24),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
+                    title: const Text('Не перезапускать окна при открытии настроек'),
+                    subtitle: const Text(
+                      'Окна только прячутся на время настроек, меню и выбора '
+                      'приложения. Экспериментально: если после настроек окна '
+                      'ведут себя странно — выключите.',
+                    ),
+                    value: settings.keepWindowsInLauncher,
+                    onChanged: (v) => settings.setKeepWindowsInLauncher(v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
                     title: const Text('Не перезапускать окна при выходе из лаунчера'),
                     subtitle: const Text(
                       'Приложения в окнах продолжат работать, пока открыто другое '

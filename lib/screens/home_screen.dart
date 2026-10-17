@@ -180,7 +180,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _hideLive() async {
     if (!_liveMode) return;
     try {
-      await NativeBridge.hideAppWindows();
+      // Надёжный режим (по умолчанию): окна закрываются и потом
+      // запускаются заново. Иначе — только прячутся, без перезапуска.
+      if (context.read<SettingsService>().keepWindowsInLauncher) {
+        await NativeBridge.hideAppWindows();
+      } else {
+        await NativeBridge.clearAppWindows();
+      }
     } catch (_) {}
   }
 

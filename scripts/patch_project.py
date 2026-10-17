@@ -51,8 +51,8 @@ def main() -> None:
     # (17.10.2026) перешёл на JNI и падает в release-сборке
     # (NoSuchMethodError getAll) — держим последнюю рабочую 2.4.x.
     (target / "pubspec_overrides.yaml").write_text(
-        "dependency_overrides:\n  shared_preferences_android: 2.4.29\n", encoding="utf-8")
-    print("pubspec_overrides.yaml: shared_preferences_android закреплён на 2.4.29")
+        "dependency_overrides:\n  shared_preferences_android: \">=2.4.0 <2.5.0\"\n", encoding="utf-8")
+    print("pubspec_overrides.yaml: shared_preferences_android ограничен версиями 2.4.x")
 
 
 if __name__ == "__main__":

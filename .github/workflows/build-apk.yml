@@ -64,7 +64,14 @@ jobs:
 
       - name: flutter pub get
         working-directory: build_output
-        run: flutter pub get
+        # Вывод при ошибке дублируем в аннотацию — её видно через API.
+        run: |
+          set -o pipefail
+          if ! flutter pub get 2>&1 | tee ../pubget.log; then
+            msg=$(tail -c 3500 ../pubget.log | tr '\n' ' ')
+            echo "::error title=pub get::$msg"
+            exit 1
+          fi
 
       # Ошибки компиляции Dart ловим заранее и понятнее, чем в выводе Gradle.
       # Предупреждения/подсказки линтера сборку не валят — только ошибки.

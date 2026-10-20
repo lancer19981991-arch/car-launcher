@@ -1,5 +1,10 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/layout_preset.dart';
+import '../models/preset.dart';
+import '../models/window_rect.dart';
 
 /// Что назначено каждому окну: приложение (имя пакета) или виджет
 /// рабочего стола (id + название). Одно исключает другое. Данные лежат
@@ -48,4 +53,88 @@ class PresetService extends ChangeNotifier {
     await _prefs.remove(_widgetLabelKey(slotId));
     notifyListeners();
   }
+
+  // ---------- сохранённые пресеты (раскладка + содержимое окон) ----------
+
+  static const _kSavedKey = 'layout_presets_v1';
+
+  List<LayoutPreset> get savedPresets => LayoutPreset.decodeList(_prefs.getString(_kSavedKey));
+
+  Future<void> _writeSaved(List<LayoutPreset> list) async {
+    await _prefs.setString(_kSavedKey, LayoutPreset.encodeList(list));
+    notifyListeners();
+  }
+
+  /// Снимок текущего состояния под именем [name].
+  LayoutPreset snapshot(String name, List<WindowRect> layout, Offset pill) {
+    final slots = <String, SlotContent>{};
+    for (final r in layout) {
+      final widgetId = widgetFor(r.slotId);
+      final pkg = packageFor(r.slotId);
+      if (widgetId != null) {
+        slots[r.slotId] = SlotContent.widget(widgetId, widgetLabelFor(r.slotId));
+      } else if (pkg != null) {
+        slots[r.slotId] = SlotContent.app(pkg);
+      }
+    }
+    return LayoutPreset(name: name, layout: [...layout], pill: pill, slots: slots);
+  }
+
+  /// Добавить пресет или заменить пресет с индексом [index].
+  /// Возвращает id виджетов, которые больше нигде не нужны.
+  Future<List<int>> savePreset(LayoutPreset preset, {int? index}) async {
+    final list = savedPresets;
+    final old = index != null && index >= 0 && index < list.length ? list[index] : null;
+    if (old != null) {
+      list[index!] = preset;
+    } else {
+      list.add(preset);
+    }
+    await _writeSaved(list);
+    return old == null ? const [] : _unused(old.widgetIds);
+  }
+
+  Future<void> renamePreset(int index, String name) async {
+    final list = savedPresets;
+    if (index < 0 || index >= list.length) return;
+    list[index] = list[index].copyWith(name: name);
+    await _writeSaved(list);
+  }
+
+  /// Удалить пресет. Возвращает id виджетов, которые больше нигде не нужны.
+  Future<List<int>> deletePreset(int index) async {
+    final list = savedPresets;
+    if (index < 0 || index >= list.length) return const [];
+    final removed = list.removeAt(index);
+    await _writeSaved(list);
+    return _unused(removed.widgetIds);
+  }
+
+  /// Расставить содержимое окон из пресета. Раскладку и пилюлю ставит
+  /// SettingsService. Возвращает id виджетов, которые больше нигде не нужны.
+  Future<List<int>> applyContents(LayoutPreset preset) async {
+    final before = [for (final s in kWindowSlots) widgetFor(s.id)].whereType<int>().toList();
+    for (final s in kWindowSlots) {
+      final c = preset.slots[s.id];
+      await _prefs.remove(_appKey(s.id));
+      await _prefs.remove(_widgetKey(s.id));
+      await _prefs.remove(_widgetLabelKey(s.id));
+      if (c?.packageName != null) {
+        await _prefs.setString(_appKey(s.id), c!.packageName!);
+      } else if (c?.widgetId != null) {
+        await _prefs.setInt(_widgetKey(s.id), c!.widgetId!);
+        if (c.widgetLabel != null) await _prefs.setString(_widgetLabelKey(s.id), c.widgetLabel!);
+      }
+    }
+    notifyListeners();
+    return _unused(before);
+  }
+
+  /// Виджет ещё нужен: стоит в окне сейчас или в каком-то пресете.
+  /// Такой виджет нельзя удалять из системы — пресет перестанет работать.
+  bool widgetInUse(int id) =>
+      kWindowSlots.any((s) => widgetFor(s.id) == id) ||
+      savedPresets.any((p) => p.widgetIds.contains(id));
+
+  List<int> _unused(Iterable<int> ids) => ids.toSet().where((id) => !widgetInUse(id)).toList();
 }

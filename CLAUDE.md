@@ -58,6 +58,11 @@ Flutter (UI) + Kotlin (нативная часть), связь — MethodChanne
   содержимого окна (приложение или виджет).
 - `lib/services/preset_service.dart` — что назначено окну: пакет приложения
   ИЛИ виджет (id + название). Слоты `window_1..window_4`.
+- `lib/services/preset_service.dart` также хранит **сохранённые пресеты**
+  (`layout_presets_v1`, модель `lib/models/layout_preset.dart`): раскладка +
+  пилюля + содержимое окон. Экран `lib/screens/presets_screen.dart`, быстрое
+  переключение — чипы в меню пилюли. Виджет из системы удаляется, только
+  если он не стоит ни в окне, ни в одном пресете (`widgetInUse`).
 - `lib/services/settings_service.dart` — раскладка, положение пилюли, запасы
   сверху/снизу, тема, переключатели:
   - `keep_windows_in_launcher` (по умолч. false) — при настройках/меню/выборе

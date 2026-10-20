@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../models/app_info.dart';
 import '../models/freeform_status.dart';
+import '../models/layout_preset.dart';
 import '../models/live_windows_status.dart';
 import '../models/preset.dart';
 import '../models/widget_provider.dart';
@@ -14,6 +15,7 @@ import '../services/settings_service.dart';
 import '../widgets/dock_clock.dart';
 import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
+import 'presets_screen.dart';
 import 'settings_screen.dart';
 import 'widget_picker_screen.dart';
 
@@ -221,35 +223,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _menuOpen = true;
     await _hideLive();
     if (!mounted) return;
+    final saved = context.read<PresetService>().savedPresets;
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.dashboard_customize_rounded),
-              title: const Text('Изменить раскладку окон'),
-              onTap: () => Navigator.of(ctx).pop('edit'),
-            ),
-            if (!_liveMode)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (saved.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (var i = 0; i < saved.length; i++)
+                        ActionChip(
+                          avatar: const Icon(Icons.dashboard_rounded, size: 18),
+                          label: Text(saved[i].name),
+                          onPressed: () => Navigator.of(ctx).pop('preset:$i'),
+                        ),
+                    ],
+                  ),
+                ),
               ListTile(
-                leading: const Icon(Icons.dashboard_rounded),
-                title: const Text('Разложить окна'),
-                onTap: () => Navigator.of(ctx).pop('layout'),
+                leading: const Icon(Icons.bookmarks_rounded),
+                title: const Text('Пресеты'),
+                subtitle: const Text('Сохранить раскладку, переключить, удалить'),
+                onTap: () => Navigator.of(ctx).pop('presets'),
               ),
-            ListTile(
-              leading: const Icon(Icons.settings_rounded),
-              title: const Text('Настройки'),
-              onTap: () => Navigator.of(ctx).pop('settings'),
+              ListTile(
+                leading: const Icon(Icons.dashboard_customize_rounded),
+                title: const Text('Изменить раскладку окон'),
+                onTap: () => Navigator.of(ctx).pop('edit'),
+              ),
+              if (!_liveMode)
+                ListTile(
+                  leading: const Icon(Icons.dashboard_rounded),
+                  title: const Text('Разложить окна'),
+                  onTap: () => Navigator.of(ctx).pop('layout'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.settings_rounded),
+                title: const Text('Настройки'),
+                onTap: () => Navigator.of(ctx).pop('settings'),
+              ),
+            ],
             ),
-          ],
         ),
       ),
     );
     _menuOpen = false;
     if (!mounted) return;
+    if (choice != null && choice.startsWith('preset:')) {
+      final i = int.tryParse(choice.substring(7));
+      if (i != null && i < saved.length) await _applyPreset(saved[i]);
+      if (_liveMode && !_editing) _scheduleSync();
+      return;
+    }
     switch (choice) {
+      case 'presets':
+        await _openPresets();
       case 'edit':
         if (!_editing) await _toggleEditing();
       case 'settings':
@@ -258,6 +293,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await _layoutAllWindows();
       default:
         if (_liveMode && !_editing) _scheduleSync();
+    }
+  }
+
+  // ---------- пресеты ----------
+
+  Future<void> _openPresets() => _withWindowsHidden(() async {
+        final preset = await Navigator.of(context).push<LayoutPreset>(
+          MaterialPageRoute(
+            builder: (_) => PresetsScreen(
+              appLabels: {for (final a in _apps.values) a.packageName: a.label},
+            ),
+          ),
+        );
+        if (preset != null && mounted) await _applyPreset(preset);
+      });
+
+  /// Включить пресет: раскладка, пилюля и содержимое окон.
+  Future<void> _applyPreset(LayoutPreset preset) async {
+    final settings = context.read<SettingsService>();
+    final presets = context.read<PresetService>();
+    final unused = await presets.applyContents(preset);
+    await settings.setWindowLayout(preset.layout);
+    await settings.setPillAlign(preset.pill);
+    for (final id in unused) {
+      NativeBridge.deleteWidget(id).catchError((_) {});
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Удалить виджеты из системы, если они больше не стоят ни в окне,
+  /// ни в одном пресете.
+  void _deleteWidgetsIfUnused(PresetService presets, List<int> ids) {
+    for (final id in ids) {
+      if (!presets.widgetInUse(id)) NativeBridge.deleteWidget(id).catchError((_) {});
     }
   }
 
@@ -305,7 +374,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (app == null) return;
     final oldWidget = presets.widgetFor(slot.id);
     await presets.assign(slot.id, app.packageName);
-    if (oldWidget != null) NativeBridge.deleteWidget(oldWidget).catchError((_) {});
+    if (oldWidget != null) _deleteWidgetsIfUnused(presets, [oldWidget]);
     if (!mounted) return;
     setState(() => _apps = {..._apps, app.packageName: app});
   }
@@ -327,7 +396,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (id == null) return; // настройку виджета отменили
     final oldWidget = presets.widgetFor(slot.id);
     await presets.assignWidget(slot.id, id, w.label);
-    if (oldWidget != null && oldWidget != id) NativeBridge.deleteWidget(oldWidget).catchError((_) {});
+    if (oldWidget != null) _deleteWidgetsIfUnused(presets, [oldWidget]);
     if (mounted) setState(() {});
   }
 

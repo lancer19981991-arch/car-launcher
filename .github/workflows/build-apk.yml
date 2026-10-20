@@ -3,6 +3,8 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
+    # Правка только заметок не должна запускать сборку.
+    paths-ignore: [ '**.md' ]
   workflow_dispatch: {}
 
 jobs:

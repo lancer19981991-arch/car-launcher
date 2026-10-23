@@ -18,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextClock
+import android.widget.TextView
 
 /**
  * Встраивание ЖИВЫХ окон чужих приложений в экран лаунчера — так же,
@@ -98,7 +99,17 @@ class AppWindowHost(
     }
 
     /** Положение и размер «пилюли» с часами (px экрана). */
-    data class PillSpec(val left: Int, val top: Int, val width: Int, val height: Int)
+    data class PillSpec(
+        val left: Int,
+        val top: Int,
+        val width: Int,
+        val height: Int,
+        /** Погода рядом с часами, например «☁ +5°»; null — не показывать. */
+        val weather: String? = null,
+    )
+
+    /** Текст погоды в пилюле. */
+    private var pillWeather: TextView? = null
 
     /** Пилюля с часами и шестерёнкой — лежит ПОВЕРХ живых окон. */
     private var pill: LinearLayout? = null
@@ -127,7 +138,23 @@ class AppWindowHost(
             setImageResource(android.R.drawable.ic_menu_preferences)
             setColorFilter(Color.WHITE)
         }
+        val weather = TextView(activity).apply {
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
+            maxLines = 1
+            visibility = View.GONE
+        }
         ll.addView(clock)
+        ll.addView(
+            weather,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { leftMargin = (8 * density).toInt() },
+        )
+        pillWeather = weather
         ll.addView(
             gear,
             LinearLayout.LayoutParams((20 * density).toInt(), (20 * density).toInt()).apply {
@@ -143,9 +170,18 @@ class AppWindowHost(
         if (spec == null) {
             pill?.let { overlay.removeView(it) }
             pill = null
+            pillWeather = null
             return
         }
         val p = ensurePill(overlay)
+        pillWeather?.let {
+            if (spec.weather.isNullOrEmpty()) {
+                it.visibility = View.GONE
+            } else {
+                it.text = spec.weather
+                it.visibility = View.VISIBLE
+            }
+        }
         val lp = p.layoutParams as FrameLayout.LayoutParams
         lp.leftMargin = spec.left
         lp.topMargin = spec.top
@@ -453,5 +489,6 @@ class AppWindowHost(
         for (id in windows.keys.toList()) removeWindow(id)
         pill?.let { overlay?.removeView(it) }
         pill = null
+        pillWeather = null
     }
 }

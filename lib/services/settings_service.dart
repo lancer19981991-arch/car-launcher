@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/weather_place.dart';
 import '../models/window_rect.dart';
 
 /// Хранит пользовательские настройки лаунчера на устройстве
@@ -28,6 +31,36 @@ class SettingsService extends ChangeNotifier {
   static const _kBorderWidthKey = 'window_border_width';
   static const _kCornerRadiusKey = 'window_corner_radius';
   static const _kGlowKey = 'window_glow';
+  static const _kWeatherOnKey = 'weather_enabled';
+  static const _kWeatherCityKey = 'weather_city';
+
+  /// Показывать погоду в пилюле.
+  bool get weatherEnabled => _prefs.getBool(_kWeatherOnKey) ?? true;
+
+  Future<void> setWeatherEnabled(bool v) async {
+    await _prefs.setBool(_kWeatherOnKey, v);
+    notifyListeners();
+  }
+
+  /// Город для погоды; null — по местоположению устройства.
+  WeatherPlace? get weatherCity {
+    final raw = _prefs.getString(_kWeatherCityKey);
+    if (raw == null) return null;
+    try {
+      return WeatherPlace.fromJson(jsonDecode(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setWeatherCity(WeatherPlace? p) async {
+    if (p == null) {
+      await _prefs.remove(_kWeatherCityKey);
+    } else {
+      await _prefs.setString(_kWeatherCityKey, jsonEncode(p.toJson()));
+    }
+    notifyListeners();
+  }
 
   /// Скругление углов окон (лог. px).
   double get windowCornerRadius => (_prefs.getDouble(_kCornerRadiusKey) ?? 16.0).clamp(0.0, 40.0);

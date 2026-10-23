@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/weather_place.dart';
 import '../services/native_bridge.dart';
 import '../services/settings_service.dart';
+import '../services/weather_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -30,6 +32,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _isDefaultLauncher = isDefault;
       _isDeviceOwner = isOwner;
     });
+  }
+
+  String _weatherStatus(BuildContext context) {
+    final w = context.watch<WeatherService>();
+    if (w.error != null) return w.error!;
+    if (w.text != null) return 'Сейчас: ${w.text}';
+    return 'Загрузка…';
+  }
+
+  Future<void> _pickCity(BuildContext context) async {
+    final settings = context.read<SettingsService>();
+    final place = await showDialog<WeatherPlace>(
+      context: context,
+      builder: (_) => const _CitySearchDialog(),
+    );
+    if (place != null) await settings.setWeatherCity(place);
   }
 
   @override
@@ -110,6 +128,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          _SectionLabel('Погода'),
+          Card(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Погода в пилюле с часами'),
+                  subtitle: const Text('Значок и температура рядом с часами'),
+                  value: settings.weatherEnabled,
+                  onChanged: (v) => settings.setWeatherEnabled(v),
+                ),
+                if (settings.weatherEnabled) ...[
+                  ListTile(
+                    leading: const Icon(Icons.location_on_outlined),
+                    title: Text(settings.weatherCity?.name ?? 'По местоположению (GPS)'),
+                    subtitle: Text(_weatherStatus(context)),
+                    trailing: TextButton(
+                      onPressed: () => _pickCity(context),
+                      child: const Text('Выбрать город'),
+                    ),
+                  ),
+                  if (settings.weatherCity != null)
+                    ListTile(
+                      leading: const Icon(Icons.my_location_rounded),
+                      title: const Text('Определять по местоположению'),
+                      onTap: () => settings.setWeatherCity(null),
+                    ),
+                ],
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -283,6 +332,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Поиск города для погоды по названию.
+class _CitySearchDialog extends StatefulWidget {
+  const _CitySearchDialog();
+
+  @override
+  State<_CitySearchDialog> createState() => _CitySearchDialogState();
+}
+
+class _CitySearchDialogState extends State<_CitySearchDialog> {
+  final _controller = TextEditingController();
+  List<WeatherPlace> _results = const [];
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final q = _controller.text.trim();
+    if (q.length < 2) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final r = await WeatherService.searchCity(q);
+      if (!mounted) return;
+      setState(() {
+        _results = r;
+        if (r.isEmpty) _error = 'Ничего не найдено';
+      });
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Нет связи с сервером погоды');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Город для погоды'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Например: Москва',
+                suffixIcon: IconButton(icon: const Icon(Icons.search_rounded), onPressed: _search),
+              ),
+              onSubmitted: (_) => _search(),
+            ),
+            const SizedBox(height: 8),
+            if (_loading) const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()),
+            if (_error != null) Padding(padding: const EdgeInsets.all(8), child: Text(_error!)),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final p in _results)
+                    ListTile(
+                      title: Text(p.name),
+                      subtitle: p.region == null || p.region!.isEmpty ? null : Text(p.region!),
+                      onTap: () => Navigator.of(context).pop(p),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
+      ],
     );
   }
 }

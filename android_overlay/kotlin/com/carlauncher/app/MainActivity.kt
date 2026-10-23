@@ -95,6 +95,23 @@ class MainActivity : FlutterActivity() {
         if (keep) appWindowHost.hide() else appWindowHost.clear()
     }
 
+    /**
+     * Последнее известное местоположение (для погоды) — без включения GPS
+     * и ожидания. Системному UID разрешение выдано всегда; в демо-сборке
+     * без разрешения просто вернёт null (город выбирается вручную).
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun lastLocation(): Map<String, Double>? {
+        val lm = getSystemService(LOCATION_SERVICE) as? android.location.LocationManager ?: return null
+        var best: android.location.Location? = null
+        val providers = try { lm.getProviders(false) } catch (e: Throwable) { emptyList<String>() }
+        for (p in providers) {
+            val loc = try { lm.getLastKnownLocation(p) } catch (e: Throwable) { null } ?: continue
+            if (best == null || loc.time > best.time) best = loc
+        }
+        return best?.let { mapOf("lat" to it.latitude, "lon" to it.longitude) }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -103,6 +120,7 @@ class MainActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
+                    "getLastLocation" -> result.success(lastLocation())
                     "requestDefaultLauncher" -> {
                         requestDefaultLauncher()
                         result.success(null)
@@ -144,6 +162,7 @@ class MainActivity : FlutterActivity() {
                                 top = (it["top"] as? Int) ?: 0,
                                 width = (it["width"] as? Int) ?: 0,
                                 height = (it["height"] as? Int) ?: 0,
+                                weather = it["weather"] as? String,
                             )
                         }
                         val b = call.argument<Map<String, Any>>("border")

@@ -172,6 +172,13 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   свечения 0–100% (`windowGlow`, по умолч. 50%), палитра — 22 оттенка.
   Нативно поверхность ActivityView скругляется скрытым `setCornerRadius`
   (через рефлексию; если метода нет — внутри рамки прямые углы).
+- **Погода в пилюле** рядом с часами («☁ +5°»): `lib/services/weather_service.dart`,
+  Open-Meteo (без ключа; `dart:io` HttpClient, без новых пакетов), обновление
+  раз в 20 мин и при возврате на экран. Место — город из настроек
+  (поиск через geocoding-api.open-meteo.com) или `getLastLocation` (нативно,
+  LocationManager.getLastKnownLocation). Пилюля шире (172 вместо 104), когда
+  есть погода; нативной пилюле текст идёт в `pill.weather`. В манифест
+  добавлены INTERNET и ACCESS_*_LOCATION.
 - Текущая раскладка у пользователя: навигатор сверху (2ГИС / Яндекс), снизу
   музыка (виджет/приложение) и TPMS.
 

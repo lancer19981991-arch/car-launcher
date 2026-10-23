@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'app.dart';
 import 'services/preset_service.dart';
 import 'services/settings_service.dart';
+import 'services/weather_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,5 +58,7 @@ Future<void> _start() async {
   final settings = await SettingsService.load();
   final presets = await PresetService.load();
 
-  runApp(CarLauncherApp(settings: settings, presets: presets));
+  final weather = WeatherService(settings);
+
+  runApp(CarLauncherApp(settings: settings, presets: presets, weather: weather));
 }

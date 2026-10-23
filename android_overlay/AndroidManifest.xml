@@ -17,6 +17,10 @@
     tools:ignore="Deprecated">
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Погода в пилюле: запрос к Open-Meteo и последнее местоположение. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Запуск activity чужих приложений на виртуальных дисплеях окон.
          Это системные/signature-разрешения — реально выдаются только
          системному (платформенно подписанному) приложению. -->

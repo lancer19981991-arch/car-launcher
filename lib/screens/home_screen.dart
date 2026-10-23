@@ -12,6 +12,7 @@ import '../models/window_rect.dart';
 import '../services/native_bridge.dart';
 import '../services/preset_service.dart';
 import '../services/settings_service.dart';
+import '../services/weather_service.dart';
 import '../widgets/dock_clock.dart';
 import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
@@ -33,8 +34,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const double _gap = 3; // отступ внутри каждой ячейки окна
   static const int _maxWindows = 4;
-  static const double _pillW = 104;
   static const double _pillH = 38;
+
+  /// Пилюля шире, когда в ней есть погода.
+  double get _pillW => context.read<WeatherService>().pillText != null ? 172 : 104;
 
   Map<String, AppInfo> _apps = const {};
   bool _appsLoaded = false;
@@ -62,13 +65,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     NativeBridge.onWindowLongPress = _onLiveWindowLongPress;
     NativeBridge.onPillTap = _showMenu;
     NativeBridge.ensureIncomingHandler();
+    _weather = context.read<WeatherService>()..addListener(_onWeather);
     _init();
+  }
+
+  WeatherService? _weather;
+  String? _shownWeather;
+
+  /// Погода обновилась — перерисовать пилюлю (и нативную тоже).
+  void _onWeather() {
+    final t = _weather?.pillText;
+    if (t == _shownWeather || !mounted) return;
+    _shownWeather = t;
+    setState(() {});
+    if (_liveMode && !_editing && !_menuOpen) _scheduleSync();
   }
 
   @override
   void dispose() {
     NativeBridge.onWindowLongPress = null;
     NativeBridge.onPillTap = null;
+    _weather?.removeListener(_onWeather);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -76,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _weather?.refreshIfStale();
       _loadApps();
       _loadFreeformStatus();
       _loadLiveStatus().then((_) {
@@ -179,6 +197,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await NativeBridge.syncAppWindows(
         specs,
         pillPx: _pillPx(),
+        pillWeather: context.read<WeatherService>().pillText,
         borderColor: settings.windowBorderColor,
         borderWidthPx: settings.windowBorderWidth * _dpr,
         cornerRadiusPx: settings.windowCornerRadius * _dpr,
@@ -608,6 +627,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _pill({VoidCallback? onTap, bool highlighted = false}) {
+    final weather = context.read<WeatherService>().pillText;
     return Material(
       color: Colors.black.withValues(alpha: 0.35),
       shape: StadiumBorder(
@@ -618,12 +638,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: InkWell(
         customBorder: const StadiumBorder(),
         onTap: onTap,
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            PillClock(),
-            SizedBox(width: 6),
-            Icon(Icons.settings_rounded, color: Colors.white, size: 20,
+            const PillClock(),
+            if (weather != null) ...[
+              const SizedBox(width: 8),
+              Text(
+                weather,
+                maxLines: 1,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  shadows: [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(0, 1))],
+                ),
+              ),
+            ],
+            const SizedBox(width: 6),
+            const Icon(Icons.settings_rounded, color: Colors.white, size: 20,
                 shadows: [Shadow(color: Colors.black, blurRadius: 4)]),
           ],
         ),

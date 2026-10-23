@@ -124,9 +124,21 @@ class NativeBridge {
   /// лаунчера). Возвращает true, если встраивание применено; false —
   /// если устройство/подпись его не поддерживают.
   /// [borderColor]/[borderWidthPx] — подсветка контура окон (null — нет).
+  /// Последнее известное местоположение устройства (широта, долгота)
+  /// или null, если его нет или нет разрешения.
+  static Future<(double, double)?> getLastLocation() async {
+    try {
+      final m = await _channel.invokeMapMethod<String, Object?>('getLastLocation');
+      final lat = m?['lat'], lon = m?['lon'];
+      if (lat is num && lon is num) return (lat.toDouble(), lon.toDouble());
+    } catch (_) {}
+    return null;
+  }
+
   static Future<bool> syncAppWindows(
     List<AppWindowSpec> windows, {
     Rect? pillPx,
+    String? pillWeather,
     Color? borderColor,
     double borderWidthPx = 0,
     double cornerRadiusPx = 0,
@@ -146,6 +158,7 @@ class NativeBridge {
           'top': pillPx.top.round(),
           'width': pillPx.width.round(),
           'height': pillPx.height.round(),
+          if (pillWeather != null) 'weather': pillWeather,
         },
     });
     return ok ?? false;

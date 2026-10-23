@@ -146,7 +146,14 @@ class MainActivity : FlutterActivity() {
                                 height = (it["height"] as? Int) ?: 0,
                             )
                         }
-                        result.success(appWindowHost.sync(specs, pill))
+                        val b = call.argument<Map<String, Any>>("border")
+                        val border = b?.let {
+                            AppWindowHost.BorderSpec(
+                                color = (it["color"] as? Number)?.toInt() ?: 0,
+                                width = (it["width"] as? Number)?.toInt() ?: 0,
+                            )
+                        }
+                        result.success(appWindowHost.sync(specs, pill, border))
                     }
                     "getWidgetProviders" -> {
                         backgroundExecutor.execute {

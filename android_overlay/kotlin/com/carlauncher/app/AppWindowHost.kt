@@ -44,6 +44,28 @@ class AppWindowHost(
     private val onPillTap: () -> Unit = {},
 ) {
 
+    /** Подсветка контура окон: цвет ARGB и толщина (px экрана). */
+    data class BorderSpec(val color: Int, val width: Int)
+
+    /** Текущая подсветка; null — без контура. */
+    private var border: BorderSpec? = null
+
+    /** Нарисовать контур вокруг окна (содержимое сдвигается внутрь). */
+    private fun styleFrame(frame: FrameLayout) {
+        val b = border
+        if (b == null || b.width <= 0) {
+            frame.background = null
+            frame.setPadding(0, 0, 0, 0)
+            return
+        }
+        frame.background = GradientDrawable().apply {
+            setColor(Color.TRANSPARENT)
+            setStroke(b.width, b.color)
+            cornerRadius = b.width.toFloat()
+        }
+        frame.setPadding(b.width, b.width, b.width, b.width)
+    }
+
     /** Положение и размер «пилюли» с часами (px экрана). */
     data class PillSpec(val left: Int, val top: Int, val width: Int, val height: Int)
 
@@ -234,10 +256,14 @@ class AppWindowHost(
      * false — если устройство/подпись не поддерживают (вызывающая
      * сторона тогда откатывается на свободные окна).
      */
-    fun sync(specs: List<WindowSpec>, pillSpec: PillSpec? = null): Boolean {
+    fun sync(specs: List<WindowSpec>, pillSpec: PillSpec? = null, borderSpec: BorderSpec? = null): Boolean {
         if (!isAvailable()) return false
         val overlay = ensureOverlay()
         overlay.visibility = View.VISIBLE
+        if (borderSpec != border) {
+            border = borderSpec
+            for (entry in windows.values) styleFrame(entry.frame)
+        }
         try {
             syncWindows(overlay, specs)
         } finally {
@@ -282,6 +308,7 @@ class AppWindowHost(
             return
         }
         val frame = WindowFrame(activity, spec.slotId)
+        styleFrame(frame)
         frame.addView(
             view,
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
@@ -308,6 +335,7 @@ class AppWindowHost(
         // Оборачиваем ActivityView в контейнер, который ловит долгое
         // нажатие (смена приложения), пропуская обычные касания внутрь.
         val frame = WindowFrame(activity, spec.slotId)
+        styleFrame(frame)
         frame.addView(
             activityView,
             FrameLayout.LayoutParams(

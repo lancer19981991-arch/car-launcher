@@ -24,6 +24,44 @@ class SettingsService extends ChangeNotifier {
   static const _kPillKey = 'pill_align';
   static const _kKeepBgKey = 'keep_windows_bg';
   static const _kKeepInLauncherKey = 'keep_windows_in_launcher';
+  static const _kBorderColorKey = 'window_border_color';
+  static const _kBorderWidthKey = 'window_border_width';
+
+  /// Цвета подсветки контура окон на выбор.
+  static const List<Color> borderColors = [
+    Color(0xFFFFFFFF), // белый
+    Color(0xFF00E5FF), // бирюзовый
+    Color(0xFF2979FF), // синий
+    Color(0xFF00E676), // зелёный
+    Color(0xFFFFEA00), // жёлтый
+    Color(0xFFFF9100), // оранжевый
+    Color(0xFFFF1744), // красный
+    Color(0xFFF50057), // розовый
+    Color(0xFFD500F9), // фиолетовый
+  ];
+
+  /// Цвет подсветки контура окон; null — подсветки нет (по умолчанию).
+  Color? get windowBorderColor {
+    final v = _prefs.getInt(_kBorderColorKey);
+    return v == null ? null : Color(v);
+  }
+
+  Future<void> setWindowBorderColor(Color? c) async {
+    if (c == null) {
+      await _prefs.remove(_kBorderColorKey);
+    } else {
+      await _prefs.setInt(_kBorderColorKey, c.toARGB32());
+    }
+    notifyListeners();
+  }
+
+  /// Толщина контура (лог. px).
+  double get windowBorderWidth => (_prefs.getDouble(_kBorderWidthKey) ?? 3.0).clamp(1.0, 8.0);
+
+  Future<void> setWindowBorderWidth(double v) async {
+    await _prefs.setDouble(_kBorderWidthKey, v.clamp(1.0, 8.0));
+    notifyListeners();
+  }
 
   /// Не перезапускать окна при открытии настроек/меню/выбора приложения
   /// (только прятать). По умолчанию выключено — так стабильнее.

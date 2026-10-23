@@ -115,6 +115,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 24),
           _SectionLabel('Оформление'),
           Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Подсветка контура окон'),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _ColorDot(
+                        color: null,
+                        selected: settings.windowBorderColor == null,
+                        onTap: () => settings.setWindowBorderColor(null),
+                      ),
+                      for (final c in SettingsService.borderColors)
+                        _ColorDot(
+                          color: c,
+                          selected: settings.windowBorderColor?.toARGB32() == c.toARGB32(),
+                          onTap: () => settings.setWindowBorderColor(c),
+                        ),
+                    ],
+                  ),
+                  if (settings.windowBorderColor != null) ...[
+                    const SizedBox(height: 12),
+                    Text('Толщина контура: ${settings.windowBorderWidth.round()} px'),
+                    Slider(
+                      min: 1,
+                      max: 8,
+                      divisions: 7,
+                      value: settings.windowBorderWidth,
+                      label: '${settings.windowBorderWidth.round()}',
+                      onChanged: (v) => settings.setWindowBorderWidth(v),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
             child: Column(
               children: [
                 RadioListTile<ThemeMode>(
@@ -221,6 +263,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Кружок выбора цвета подсветки; [color] == null — «без подсветки».
+class _ColorDot extends StatelessWidget {
+  const _ColorDot({required this.color, required this.selected, required this.onTap});
+
+  final Color? color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color ?? scheme.surfaceContainerHighest,
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outline.withValues(alpha: 0.4),
+            width: selected ? 3 : 1,
+          ),
+          boxShadow: color != null && selected
+              ? [BoxShadow(color: color!.withValues(alpha: 0.6), blurRadius: 8)]
+              : null,
+        ),
+        child: color == null
+            ? Icon(Icons.block_rounded, size: 20, color: scheme.onSurface.withValues(alpha: 0.6))
+            : (selected ? const Icon(Icons.check_rounded, size: 20, color: Colors.black) : null),
       ),
     );
   }

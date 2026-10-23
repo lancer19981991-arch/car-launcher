@@ -174,8 +174,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ? AppWindowSpec(slotId: r.slotId, packageName: '', boundsPx: bounds, widgetId: widgetId)
           : AppWindowSpec(slotId: r.slotId, packageName: pkg!, boundsPx: bounds));
     }
+    final settings = context.read<SettingsService>();
     try {
-      await NativeBridge.syncAppWindows(specs, pillPx: _pillPx());
+      await NativeBridge.syncAppWindows(
+        specs,
+        pillPx: _pillPx(),
+        borderColor: settings.windowBorderColor,
+        borderWidthPx: settings.windowBorderWidth * _dpr,
+      );
     } catch (_) {}
   }
 
@@ -838,11 +844,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
 
-    return Card(
+    // Подсветка контура (в правке рамку рисует режим правки). В системном
+    // режиме поверх карточки лежит живое окно со своей рамкой, а свечение
+    // вокруг всё равно видно.
+    final settings = context.read<SettingsService>();
+    final glow = editing ? null : settings.windowBorderColor;
+    final glowW = settings.windowBorderWidth;
+
+    final card = Card(
       key: _keys[slotId],
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glow == null ? BorderSide.none : BorderSide(color: glow, width: glowW),
+      ),
       child: editing
           ? content
           : InkWell(
@@ -856,6 +872,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               onLongPress: () => _withWindowsHidden(() => _pickContent(slot)),
               child: content,
             ),
+    );
+    if (glow == null) return card;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: glow.withValues(alpha: 0.55), blurRadius: glowW * 4)],
+      ),
+      child: card,
     );
   }
 }

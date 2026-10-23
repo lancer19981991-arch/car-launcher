@@ -1,4 +1,4 @@
-import 'dart:ui' show Rect;
+import 'dart:ui' show Color, Rect;
 
 import 'package:flutter/services.dart';
 
@@ -123,9 +123,21 @@ class NativeBridge {
   /// Показать живые окна приложений в заданных областях (px экрана
   /// лаунчера). Возвращает true, если встраивание применено; false —
   /// если устройство/подпись его не поддерживают.
-  static Future<bool> syncAppWindows(List<AppWindowSpec> windows, {Rect? pillPx}) async {
+  /// [borderColor]/[borderWidthPx] — подсветка контура окон (null — нет).
+  static Future<bool> syncAppWindows(
+    List<AppWindowSpec> windows, {
+    Rect? pillPx,
+    Color? borderColor,
+    double borderWidthPx = 0,
+  }) async {
     final ok = await _channel.invokeMethod<bool>('syncAppWindows', {
       'windows': [for (final w in windows) w.toMap()],
+      if (borderColor != null && borderWidthPx > 0)
+        'border': {
+          // Знаковое 32-битное число — так оно приходит в Kotlin как Int.
+          'color': borderColor.toARGB32().toSigned(32),
+          'width': borderWidthPx.round(),
+        },
       if (pillPx != null)
         'pill': {
           'left': pillPx.left.round(),

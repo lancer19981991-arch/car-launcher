@@ -34,11 +34,18 @@ class WeatherService extends ChangeNotifier {
   /// Название места, для которого показана погода.
   String? placeName;
 
+  /// Откуда взята текущая погода: «Яндекс», «Open-Meteo», «met.no».
+  String? source;
+
+  /// Ошибка Яндекса (если ключ задан, но Яндекс не ответил) — для настроек.
+  String? yandexError;
+
   /// Что показывать в пилюле прямо сейчас.
   String? get pillText => _settings.weatherEnabled ? text : null;
 
   String _settingsKey() =>
-      '${_settings.weatherEnabled}|${_settings.weatherCity?.lat}|${_settings.weatherCity?.lon}';
+      '${_settings.weatherEnabled}|${_settings.weatherCity?.lat}|${_settings.weatherCity?.lon}'
+      '|${_settings.yandexWeatherKey}';
 
   void _onSettings() {
     final key = _settingsKey();
@@ -76,12 +83,40 @@ class WeatherService extends ChangeNotifier {
         lon = loc.$2;
         placeName = 'по местоположению';
       }
-      // Основной сервис — Open-Meteo, запасной — met.no (если первый
-      // недоступен из сети пользователя).
-      final (icon, t) = await _firstOk<(String, int)>([
-        () => _openMeteo(lat, lon),
-        () => _metNo(lat, lon),
-      ]);
+      // Если задан ключ — сначала Яндекс. Без ключа или при сбое —
+      // Open-Meteo, затем met.no.
+      (String, int)? got;
+      String? from;
+      final key = _settings.yandexWeatherKey;
+      if (key != null) {
+        try {
+          got = await _yandex(lat, lon, key);
+          from = 'Яндекс';
+          yandexError = null;
+        } catch (e) {
+          yandexError = describeError(e);
+        }
+      } else {
+        yandexError = null;
+      }
+      if (got == null) {
+        Object? firstError;
+        for (final (name, src) in [
+          ('Open-Meteo', () => _openMeteo(lat, lon)),
+          ('met.no', () => _metNo(lat, lon)),
+        ]) {
+          try {
+            got = await src();
+            from = name;
+            break;
+          } catch (e) {
+            firstError ??= e;
+          }
+        }
+        if (got == null) throw firstError!;
+      }
+      final (icon, t) = got;
+      source = from;
       text = '$icon ${t > 0 ? '+' : ''}$t°';
       error = null;
       _updatedAt = DateTime.now();
@@ -91,16 +126,47 @@ class WeatherService extends ChangeNotifier {
     } finally {
       _loading = false;
       notifyListeners();
-      // Сразу после включения магнитолы сети/GPS ещё может не быть —
-      // пока погоды нет, пробуем чаще.
-      if (text == null) {
+      // Сразу после включения магнитолы сети/GPS ещё может не быть, да и
+      // серверы иногда не отвечают — после неудачи пробуем снова скоро,
+      // а не через 20 минут.
+      if (text == null || error != null) {
         _retry?.cancel();
-        _retry = Timer(const Duration(minutes: 1), refresh);
+        _retry = Timer(Duration(minutes: text == null ? 1 : 3), refresh);
       }
     }
   }
 
   Timer? _retry;
+
+  /// Яндекс.Погода (нужен личный ключ). Ключ шлём в обоих заголовках —
+  /// старом и новом, у разных тарифов они разные.
+  static Future<(String, int)> _yandex(double lat, double lon, String key) async {
+    final data = await _getJson(
+      Uri.https('api.weather.yandex.ru', '/v2/forecast', {
+        'lat': lat.toStringAsFixed(4),
+        'lon': lon.toStringAsFixed(4),
+        'lang': 'ru_RU',
+        'limit': '1',
+        'hours': 'false',
+        'extra': 'false',
+      }),
+      headers: {'X-Yandex-Weather-Key': key, 'X-Yandex-API-Key': key},
+    );
+    final fact = (data as Map)['fact'] as Map;
+    final t = (fact['temp'] as num).round();
+    final cond = fact['condition'] as String? ?? '';
+    final night = fact['daytime'] == 'n';
+    return (_yandexIcon(cond, night), t);
+  }
+
+  static String _yandexIcon(String c, bool night) {
+    if (c.contains('thunderstorm')) return '⛈';
+    if (c.contains('snow') || c == 'hail') return '❄';
+    if (c.contains('rain') || c.contains('showers') || c == 'drizzle') return '🌧';
+    if (c == 'clear') return night ? '☾' : '☀';
+    if (c == 'partly-cloudy') return night ? '☁' : '⛅';
+    return '☁';
+  }
 
   static Future<(String, int)> _openMeteo(double lat, double lon) async {
     final data = await _getJson(Uri.https('api.open-meteo.com', '/v1/forecast', {
@@ -162,7 +228,12 @@ class WeatherService extends ChangeNotifier {
           '${host != null ? ', $host' : ''}) — есть ли интернет?';
     }
     if (e is TimeoutException) return 'Сервер погоды не отвечает — медленный или нет интернета';
-    if (e is HttpException) return 'Сервер погоды ответил ошибкой: ${e.message}';
+    if (e is HttpException) {
+      if (e.message.contains('401') || e.message.contains('403')) {
+        return 'Сервер не принял ключ (${e.message}) — проверьте ключ';
+      }
+      return 'Сервер погоды ответил ошибкой: ${e.message}';
+    }
     return 'Не удалось получить погоду: $e';
   }
 
@@ -211,13 +282,14 @@ class WeatherService extends ChangeNotifier {
     ];
   }
 
-  static Future<Object?> _getJson(Uri uri) async {
+  static Future<Object?> _getJson(Uri uri, {Map<String, String> headers = const {}}) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
       final req = await client.getUrl(uri).timeout(const Duration(seconds: 15));
       // met.no и OpenStreetMap требуют представиться.
       req.headers.set(HttpHeaders.userAgentHeader,
           'CarLauncher/1.0 (github.com/lancer19981991-arch/car-launcher)');
+      headers.forEach(req.headers.set);
       final res = await req.close().timeout(const Duration(seconds: 15));
       if (res.statusCode != 200) throw HttpException('HTTP ${res.statusCode}');
       return jsonDecode(await res.transform(utf8.decoder).join());

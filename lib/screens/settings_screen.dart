@@ -37,8 +37,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _weatherStatus(BuildContext context) {
     final w = context.watch<WeatherService>();
     if (w.error != null) return w.error!;
-    if (w.text != null) return 'Сейчас: ${w.text}';
+    if (w.text != null) return 'Сейчас: ${w.text}${w.source != null ? ' (${w.source})' : ''}';
     return 'Загрузка…';
+  }
+
+  String _yandexStatus(BuildContext context, String? key) {
+    if (key == null) return 'Не задан — погода из Open-Meteo / met.no';
+    final w = context.watch<WeatherService>();
+    final tail = key.length > 4 ? key.substring(key.length - 4) : key;
+    if (w.yandexError != null) return '…$tail: ${w.yandexError}';
+    if (w.source == 'Яндекс') return '…$tail: работает';
+    return '…$tail: проверяется…';
+  }
+
+  Future<void> _editYandexKey(BuildContext context) async {
+    final settings = context.read<SettingsService>();
+    final controller = TextEditingController(text: settings.yandexWeatherKey ?? '');
+    final v = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ключ Яндекс.Погоды'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Вставьте ключ'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(''), child: const Text('Удалить ключ')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    if (v != null) await settings.setYandexWeatherKey(v);
   }
 
   Future<void> _pickCity(BuildContext context) async {
@@ -157,6 +191,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: const Text('Определять по местоположению'),
                       onTap: () => settings.setWeatherCity(null),
                     ),
+                  ListTile(
+                    leading: const Icon(Icons.key_rounded),
+                    title: const Text('Ключ Яндекс.Погоды'),
+                    subtitle: Text(_yandexStatus(context, settings.yandexWeatherKey)),
+                    trailing: TextButton(
+                      onPressed: () => _editYandexKey(context),
+                      child: Text(settings.yandexWeatherKey == null ? 'Ввести' : 'Изменить'),
+                    ),
+                  ),
                 ],
               ],
             ),

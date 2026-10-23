@@ -33,6 +33,23 @@ class SettingsService extends ChangeNotifier {
   static const _kGlowKey = 'window_glow';
   static const _kWeatherOnKey = 'weather_enabled';
   static const _kWeatherCityKey = 'weather_city';
+  static const _kYandexKey = 'weather_yandex_key';
+
+  /// Личный ключ Яндекс.Погоды; null — Яндекс не используется.
+  String? get yandexWeatherKey {
+    final v = _prefs.getString(_kYandexKey)?.trim();
+    return v == null || v.isEmpty ? null : v;
+  }
+
+  Future<void> setYandexWeatherKey(String? v) async {
+    final t = v?.trim();
+    if (t == null || t.isEmpty) {
+      await _prefs.remove(_kYandexKey);
+    } else {
+      await _prefs.setString(_kYandexKey, t);
+    }
+    notifyListeners();
+  }
 
   /// Показывать погоду в пилюле.
   bool get weatherEnabled => _prefs.getBool(_kWeatherOnKey) ?? true;

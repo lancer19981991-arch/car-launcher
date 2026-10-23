@@ -129,6 +129,7 @@ class NativeBridge {
     Rect? pillPx,
     Color? borderColor,
     double borderWidthPx = 0,
+    double cornerRadiusPx = 0,
   }) async {
     final ok = await _channel.invokeMethod<bool>('syncAppWindows', {
       'windows': [for (final w in windows) w.toMap()],
@@ -137,6 +138,7 @@ class NativeBridge {
           // Знаковое 32-битное число — так оно приходит в Kotlin как Int.
           'color': borderColor.toARGB32().toSigned(32),
           'width': borderWidthPx.round(),
+          'radius': cornerRadiusPx.round(),
         },
       if (pillPx != null)
         'pill': {

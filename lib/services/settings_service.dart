@@ -26,18 +26,49 @@ class SettingsService extends ChangeNotifier {
   static const _kKeepInLauncherKey = 'keep_windows_in_launcher';
   static const _kBorderColorKey = 'window_border_color';
   static const _kBorderWidthKey = 'window_border_width';
+  static const _kCornerRadiusKey = 'window_corner_radius';
+  static const _kGlowKey = 'window_glow';
+
+  /// Скругление углов окон (лог. px).
+  double get windowCornerRadius => (_prefs.getDouble(_kCornerRadiusKey) ?? 16.0).clamp(0.0, 40.0);
+
+  Future<void> setWindowCornerRadius(double v) async {
+    await _prefs.setDouble(_kCornerRadiusKey, v.clamp(0.0, 40.0));
+    notifyListeners();
+  }
+
+  /// Сила свечения вокруг контура: 0 — нет, 1 — максимум.
+  double get windowGlow => (_prefs.getDouble(_kGlowKey) ?? 0.5).clamp(0.0, 1.0);
+
+  Future<void> setWindowGlow(double v) async {
+    await _prefs.setDouble(_kGlowKey, v.clamp(0.0, 1.0));
+    notifyListeners();
+  }
 
   /// Цвета подсветки контура окон на выбор.
   static const List<Color> borderColors = [
     Color(0xFFFFFFFF), // белый
+    Color(0xFFB0BEC5), // серебристый
+    Color(0xFF80D8FF), // ледяной
+    Color(0xFF40C4FF), // небесный
     Color(0xFF00E5FF), // бирюзовый
+    Color(0xFF1DE9B6), // аквамарин
     Color(0xFF2979FF), // синий
-    Color(0xFF00E676), // зелёный
-    Color(0xFFFFEA00), // жёлтый
-    Color(0xFFFF9100), // оранжевый
-    Color(0xFFFF1744), // красный
-    Color(0xFFF50057), // розовый
+    Color(0xFF3D5AFE), // индиго
+    Color(0xFF651FFF), // сине-фиолетовый
     Color(0xFFD500F9), // фиолетовый
+    Color(0xFFE040FB), // сиреневый
+    Color(0xFFFF4081), // малиновый
+    Color(0xFFF50057), // розовый
+    Color(0xFFFF1744), // красный
+    Color(0xFFFF6E40), // коралловый
+    Color(0xFFFF9100), // оранжевый
+    Color(0xFFFFC400), // янтарный
+    Color(0xFFFFEA00), // жёлтый
+    Color(0xFFC6FF00), // лайм
+    Color(0xFF76FF03), // салатовый
+    Color(0xFF00E676), // зелёный
+    Color(0xFF69F0AE), // мятный
   ];
 
   /// Цвет подсветки контура окон; null — подсветки нет (по умолчанию).

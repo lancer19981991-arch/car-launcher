@@ -168,6 +168,10 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   Flutter рисует рамку+свечение у карточек; в живом режиме рамку рисует
   нативная сторона (`AppWindowHost.BorderSpec`, `styleFrame`: stroke + padding
   у `WindowFrame`), передаётся в `syncAppWindows` полем `border`.
+  Ещё: скругление углов 0–40 px (`windowCornerRadius`, по умолч. 16) и сила
+  свечения 0–100% (`windowGlow`, по умолч. 50%), палитра — 22 оттенка.
+  Нативно поверхность ActivityView скругляется скрытым `setCornerRadius`
+  (через рефлексию; если метода нет — внутри рамки прямые углы).
 - Текущая раскладка у пользователя: навигатор сверху (2ГИС / Яндекс), снизу
   музыка (виджет/приложение) и TPMS.
 

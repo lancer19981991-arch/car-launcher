@@ -44,8 +44,8 @@ class AppWindowHost(
     private val onPillTap: () -> Unit = {},
 ) {
 
-    /** Подсветка контура окон: цвет ARGB и толщина (px экрана). */
-    data class BorderSpec(val color: Int, val width: Int)
+    /** Подсветка контура окон: цвет ARGB, толщина и скругление (px экрана). */
+    data class BorderSpec(val color: Int, val width: Int, val radius: Int = 0)
 
     /** Текущая подсветка; null — без контура. */
     private var border: BorderSpec? = null
@@ -56,14 +56,45 @@ class AppWindowHost(
         if (b == null || b.width <= 0) {
             frame.background = null
             frame.setPadding(0, 0, 0, 0)
+            frame.clipToOutline = false
+            frame.getChildAt(0)?.let { setInnerCornerRadius(it, 0f) }
             return
         }
+        val radius = maxOf(b.radius, b.width).toFloat()
         frame.background = GradientDrawable().apply {
             setColor(Color.TRANSPARENT)
             setStroke(b.width, b.color)
-            cornerRadius = b.width.toFloat()
+            cornerRadius = radius
         }
         frame.setPadding(b.width, b.width, b.width, b.width)
+        // Обычные View (виджеты) обрезаются по скруглённому контуру рамки.
+        frame.clipToOutline = true
+        // Поверхность живого приложения так не обрезается — скругляем её
+        // скрытым API (есть на Android 10/11), внутренний радиус меньше.
+        frame.getChildAt(0)?.let { setInnerCornerRadius(it, maxOf(radius - b.width, 0f)) }
+    }
+
+    /** Скругление углов поверхности ActivityView (скрытый API, по возможности). */
+    private fun setInnerCornerRadius(view: View, r: Float) {
+        if (view !is ViewGroup && view !is android.view.SurfaceView) return
+        try {
+            view.javaClass.getMethod("setCornerRadius", java.lang.Float.TYPE).invoke(view, r)
+            return
+        } catch (e: Throwable) {
+            // нет у этого класса — пробуем SurfaceView внутри
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val c = view.getChildAt(i)
+                if (c is android.view.SurfaceView) {
+                    try {
+                        c.javaClass.getMethod("setCornerRadius", java.lang.Float.TYPE).invoke(c, r)
+                    } catch (e: Throwable) {
+                        // скрытого метода нет — останутся прямые углы внутри рамки
+                    }
+                }
+            }
+        }
     }
 
     /** Положение и размер «пилюли» с часами (px экрана). */
@@ -308,7 +339,6 @@ class AppWindowHost(
             return
         }
         val frame = WindowFrame(activity, spec.slotId)
-        styleFrame(frame)
         frame.addView(
             view,
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
@@ -317,6 +347,7 @@ class AppWindowHost(
         lp.leftMargin = spec.left
         lp.topMargin = spec.top
         overlay.addView(frame, lp)
+        styleFrame(frame)
         widgets.updateSize(view, spec.width, spec.height)
         windows[spec.slotId] = WindowEntry(frame, view, spec.packageName, widgetId = spec.widgetId, started = true)
     }
@@ -335,7 +366,6 @@ class AppWindowHost(
         // Оборачиваем ActivityView в контейнер, который ловит долгое
         // нажатие (смена приложения), пропуская обычные касания внутрь.
         val frame = WindowFrame(activity, spec.slotId)
-        styleFrame(frame)
         frame.addView(
             activityView,
             FrameLayout.LayoutParams(
@@ -348,6 +378,7 @@ class AppWindowHost(
         lp.leftMargin = spec.left
         lp.topMargin = spec.top
         overlay.addView(frame, lp)
+        styleFrame(frame)
 
         val entry = WindowEntry(frame, activityView, spec.packageName)
         windows[spec.slotId] = entry

@@ -181,6 +181,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         pillPx: _pillPx(),
         borderColor: settings.windowBorderColor,
         borderWidthPx: settings.windowBorderWidth * _dpr,
+        cornerRadiusPx: settings.windowCornerRadius * _dpr,
       );
     } catch (_) {}
   }
@@ -850,13 +851,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final settings = context.read<SettingsService>();
     final glow = editing ? null : settings.windowBorderColor;
     final glowW = settings.windowBorderWidth;
+    final glowS = settings.windowGlow;
+    final radius = BorderRadius.circular(settings.windowCornerRadius);
 
     final card = Card(
       key: _keys[slotId],
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: radius,
         side: glow == null ? BorderSide.none : BorderSide(color: glow, width: glowW),
       ),
       child: editing
@@ -873,11 +876,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: content,
             ),
     );
-    if (glow == null) return card;
+    if (glow == null || glowS <= 0) return card;
+    // Два слоя: широкий мягкий ореол и плотное свечение у самого контура.
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: glow.withValues(alpha: 0.55), blurRadius: glowW * 4)],
+        borderRadius: radius,
+        boxShadow: [
+          BoxShadow(
+            color: glow.withValues(alpha: 0.35 + 0.6 * glowS),
+            blurRadius: 8 + 40 * glowS,
+            spreadRadius: 1 + 6 * glowS,
+          ),
+          BoxShadow(
+            color: glow.withValues(alpha: 0.5 + 0.5 * glowS),
+            blurRadius: 2 + 10 * glowS,
+            spreadRadius: glowS * 2,
+          ),
+        ],
       ),
       child: card,
     );

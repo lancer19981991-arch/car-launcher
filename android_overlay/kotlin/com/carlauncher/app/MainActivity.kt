@@ -151,6 +151,7 @@ class MainActivity : FlutterActivity() {
                             AppWindowHost.BorderSpec(
                                 color = (it["color"] as? Number)?.toInt() ?: 0,
                                 width = (it["width"] as? Number)?.toInt() ?: 0,
+                                radius = (it["radius"] as? Number)?.toInt() ?: 0,
                             )
                         }
                         result.success(appWindowHost.sync(specs, pill, border))

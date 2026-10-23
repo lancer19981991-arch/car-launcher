@@ -179,6 +179,10 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   LocationManager.getLastKnownLocation). Пилюля шире (172 вместо 104), когда
   есть погода; нативной пилюле текст идёт в `pill.weather`. В манифест
   добавлены INTERNET и ACCESS_*_LOCATION.
+  Запасные источники (если Open-Meteo недоступен): погода — api.met.no,
+  поиск города — nominatim.openstreetmap.org (оба требуют User-Agent).
+  Ошибки показываются понятно (`WeatherService.describeError`). Из окружения
+  Claude эти хосты закрыты прокси — проверить можно только на устройстве.
 - Текущая раскладка у пользователя: навигатор сверху (2ГИС / Яндекс), снизу
   музыка (виджет/приложение) и TPMS.
 

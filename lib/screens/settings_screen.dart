@@ -370,8 +370,8 @@ class _CitySearchDialogState extends State<_CitySearchDialog> {
         _results = r;
         if (r.isEmpty) _error = 'Ничего не найдено';
       });
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Нет связи с сервером погоды');
+    } catch (e) {
+      if (mounted) setState(() => _error = WeatherService.describeError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -87,6 +87,12 @@ Flutter SDK нет и скачать его из окружения нельзя
 ключом AOSP `platform.pk8/x509` (из aosp-mirror/platform_build) →
 GitHub Release `build-N` с `car-launcher-build-N.apk`.
 
+В том же релизе — **демо-сборка** `car-launcher-demo-build-N.apk`
+(шаг «Build demo APK»): без `sharedUserId`, без HOME, applicationId
+`com.carlauncher.app.demo`, подпись AOSP `testkey`. Ставится на любой
+телефон/эмулятор рядом с основной; живых окон нет (запасной режим) —
+чтобы смотреть и настраивать интерфейс без магнитолы.
+
 **Ссылку пользователю давать на страницу релиза**
 (`https://github.com/lancer19981991-arch/car-launcher/releases/tag/build-N`,
 там «Assets» → `car-launcher-build-N.apk`). Прямая ссылка на файл у него

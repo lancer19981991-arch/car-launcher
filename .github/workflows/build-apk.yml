@@ -120,6 +120,50 @@ jobs:
           echo "=== signer certificate (ожидается AOSP platform, SHA1 2719...) ==="
           "$APKSIGNER" verify --print-certs "$OUT" | grep -i "SHA-1" || true
 
+      # Демо-сборка для любого телефона/эмулятора: без sharedUserId
+      # (на чужой прошивке иначе не установится), без HOME (не подменяет
+      # домашний экран, открывается как обычное приложение), со своим
+      # applicationId (ставится рядом с основной). Живых окон в ней нет —
+      # лаунчер сам переходит в запасной режим. Нужна, чтобы смотреть и
+      # править интерфейс без магнитолы.
+      - name: Build demo APK (no system rights)
+        working-directory: build_output
+        shell: bash
+        run: |
+          set -eo pipefail
+          python3 - <<'PY'
+          import pathlib, re
+          m = pathlib.Path("android/app/src/main/AndroidManifest.xml")
+          s = m.read_text(encoding="utf-8")
+          s = s.replace('android:sharedUserId="android.uid.system"', '')
+          s = re.sub(r'<intent-filter>(?:(?!</intent-filter>).)*category\.HOME.*?</intent-filter>', '', s, flags=re.S)
+          s = s.replace('android:label="Car Launcher"', 'android:label="Car Launcher Демо"')
+          assert 'sharedUserId' not in s.split('-->', 1)[1] and 'category.HOME' not in s
+          m.write_text(s, encoding="utf-8")
+          n = 0
+          for g in pathlib.Path("android/app").glob("build.gradle*"):
+              t = g.read_text(encoding="utf-8")
+              t2 = re.sub(r'(applicationId\s*=?\s*")com\.carlauncher\.app(")', r'\1com.carlauncher.app.demo\2', t)
+              if t2 != t:
+                  g.write_text(t2, encoding="utf-8")
+                  n += 1
+          assert n == 1, "applicationId не найден"
+          PY
+          flutter build apk --release 2>&1 | tee "$GITHUB_WORKSPACE/demo_build.log"
+
+          # Подпись постоянным публичным ключом AOSP testkey (не platform),
+          # чтобы новые демо-сборки ставились поверх старых.
+          cd "$GITHUB_WORKSPACE/signing"
+          base="https://raw.githubusercontent.com/aosp-mirror/platform_build/master/target/product/security"
+          curl -fsSL "$base/testkey.pk8" -o testkey.pk8
+          curl -fsSL "$base/testkey.x509.pem" -o testkey.x509.pem
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/ | sort -V | tail -1)
+          IN="$GITHUB_WORKSPACE/build_output/build/app/outputs/flutter-apk/app-release.apk"
+          OUT="$GITHUB_WORKSPACE/car-launcher-demo.apk"
+          "$BT/zipalign" -f -p 4 "$IN" "$OUT"
+          "$BT/apksigner" sign --key testkey.pk8 --cert testkey.x509.pem \
+            --v2-signing-enabled true --v3-signing-enabled true "$OUT"
+
       # Полные логи Actions отдаются с домена, который доступен не из
       # всех окружений; аннотации запуска видны через обычный GitHub API.
       # Поэтому при падении дублируем ключевые строки ошибок в аннотацию.
@@ -129,7 +173,7 @@ jobs:
         run: |
           python3 - <<'EOF'
           import pathlib
-          for name in ("analyze.log", "build.log"):
+          for name in ("analyze.log", "build.log", "demo_build.log"):
               p = pathlib.Path(name)
               if not p.exists():
                   continue
@@ -157,7 +201,8 @@ jobs:
         run: |
           tag="build-${{ github.run_number }}"
           cp "$GITHUB_WORKSPACE/car-launcher-signed.apk" "car-launcher-${tag}.apk"
-          gh release create "$tag" "car-launcher-${tag}.apk" \
+          cp "$GITHUB_WORKSPACE/car-launcher-demo.apk" "car-launcher-demo-${tag}.apk"
+          gh release create "$tag" "car-launcher-${tag}.apk" "car-launcher-demo-${tag}.apk" \
             --repo "${{ github.repository }}" \
             --title "Car Launcher build #${{ github.run_number }}" \
-            --notes "Автоматическая сборка из коммита ${{ github.sha }}. Подписан платформенным ключом AOSP (системное приложение)."
+            --notes "Автоматическая сборка из коммита ${{ github.sha }}. car-launcher-build-N.apk — для магнитолы (подписан платформенным ключом AOSP, системное приложение). car-launcher-demo-build-N.apk — демо для любого телефона/эмулятора: без живых окон, не заменяет домашний экран, только посмотреть и настроить интерфейс."

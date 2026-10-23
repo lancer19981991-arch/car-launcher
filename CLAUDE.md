@@ -92,6 +92,7 @@ GitHub Release `build-N` с `car-launcher-build-N.apk`.
 `com.carlauncher.app.demo`, подпись AOSP `testkey`. Ставится на любой
 телефон/эмулятор рядом с основной; живых окон нет (запасной режим) —
 чтобы смотреть и настраивать интерфейс без магнитолы.
+У пользователя демо стоит в эмуляторе Android Studio «Medium Tablet», API 30.
 
 **Ссылку пользователю давать на страницу релиза**
 (`https://github.com/lancer19981991-arch/car-launcher/releases/tag/build-N`,
@@ -183,6 +184,9 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   поиск города — nominatim.openstreetmap.org (оба требуют User-Agent).
   Ошибки показываются понятно (`WeatherService.describeError`). Из окружения
   Claude эти хосты закрыты прокси — проверить можно только на устройстве.
+  build-34 в эмуляторе давал «нет связи» (браузер при этом Open-Meteo
+  открывал), в build-35 (с запасными источниками) погода заработала —
+  какой именно источник сработал, неизвестно.
 - Текущая раскладка у пользователя: навигатор сверху (2ГИС / Яндекс), снизу
   музыка (виджет/приложение) и TPMS.
 

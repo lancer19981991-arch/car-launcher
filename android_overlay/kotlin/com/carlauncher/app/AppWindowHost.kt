@@ -256,6 +256,9 @@ class AppWindowHost(
         /** 0 — приложение; иначе id виджета. */
         val widgetId: Int = 0,
         var started: Boolean = false,
+        /** Желаемая плотность (0 — как у экрана) и уже применённая. */
+        var densityDpi: Int = 0,
+        var appliedDensity: Int = 0,
     )
 
     /** Последняя ошибка встраивания — для диагностики на экране. */
@@ -315,6 +318,8 @@ class AppWindowHost(
         val height: Int,
         /** 0 — в окне приложение; иначе — виджет с этим id. */
         val widgetId: Int = 0,
+        /** Плотность виртуального дисплея (масштаб приложения); 0 — как есть. */
+        val densityDpi: Int = 0,
     )
 
     /**
@@ -359,6 +364,10 @@ class AppWindowHost(
                 if (spec.widgetId != 0) addWidget(overlay, spec) else addWindow(overlay, spec)
             } else {
                 applyBounds(existing.frame, spec)
+                if (existing.widgetId == 0) {
+                    existing.densityDpi = spec.densityDpi
+                    applyDensity(existing) // ничего не делает, если уже применено
+                }
                 if (existing.widgetId != 0) {
                     (existing.activityView as? android.appwidget.AppWidgetHostView)
                         ?.let { widgets.updateSize(it, spec.width, spec.height) }
@@ -416,7 +425,7 @@ class AppWindowHost(
         overlay.addView(frame, lp)
         styleFrame(frame)
 
-        val entry = WindowEntry(frame, activityView, spec.packageName)
+        val entry = WindowEntry(frame, activityView, spec.packageName, densityDpi = spec.densityDpi)
         windows[spec.slotId] = entry
 
         // ActivityView должен быть прикреплён и измерен до startActivity.
@@ -432,6 +441,8 @@ class AppWindowHost(
         val intent = activity.packageManager.getLaunchIntentForPackage(entry.packageName)
         if (intent == null) return
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // Масштаб ставим до запуска — приложение сразу откроется с ним.
+        applyDensity(entry)
         val ok = try {
             val m = activityViewClass!!.getMethod("startActivity", Intent::class.java)
             m.invoke(entry.activityView, intent)
@@ -441,11 +452,63 @@ class AppWindowHost(
             false
         }
         if (ok) {
+            // Если дисплей был ещё не готов до запуска — применим масштаб чуть позже.
+            if (entry.appliedDensity != entry.densityDpi) {
+                handler.postDelayed({ if (windows.containsValue(entry)) applyDensity(entry) }, 300L)
+            }
             entry.started = true
             lastError = null
         } else if (attempt < 5) {
             // Виртуальный дисплей ещё не готов — повторим.
             handler.postDelayed({ startInto(entry, attempt + 1) }, 250L)
+        }
+    }
+
+    /** id виртуального дисплея окна (скрытый API) или -1. */
+    private fun virtualDisplayId(view: View): Int {
+        try {
+            val id = view.javaClass.getMethod("getVirtualDisplayId").invoke(view) as? Int
+            if (id != null && id > 0) return id
+        } catch (e: Throwable) {
+            // нет метода — пробуем поле
+        }
+        return try {
+            val f = activityViewClass!!.getDeclaredField("mVirtualDisplay")
+            f.isAccessible = true
+            (f.get(view) as? android.hardware.display.VirtualDisplay)?.display?.displayId ?: -1
+        } catch (e: Throwable) {
+            -1
+        }
+    }
+
+    /**
+     * Масштаб приложения: меняем плотность (dpi) виртуального дисплея окна,
+     * как `wm density N -d <id>`. Приложение само перерисуется мельче или
+     * крупнее, касания при этом остаются точными. Нужен системный UID.
+     */
+    private fun applyDensity(entry: WindowEntry) {
+        if (entry.densityDpi == entry.appliedDensity) return
+        val displayId = virtualDisplayId(entry.activityView)
+        if (displayId <= 0) return // дисплея ещё нет — применится при запуске
+        try {
+            val wm = Class.forName("android.view.WindowManagerGlobal")
+                .getMethod("getWindowManagerService").invoke(null)
+            val user = Class.forName("android.os.UserHandle").getMethod("myUserId").invoke(null) as Int
+            val iwm = Class.forName("android.view.IWindowManager")
+            if (entry.densityDpi > 0) {
+                iwm.getMethod(
+                    "setForcedDisplayDensityForUser",
+                    Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
+                ).invoke(wm, displayId, entry.densityDpi, user)
+            } else {
+                iwm.getMethod(
+                    "clearForcedDisplayDensityForUser",
+                    Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
+                ).invoke(wm, displayId, user)
+            }
+            entry.appliedDensity = entry.densityDpi
+        } catch (e: Throwable) {
+            lastError = "Масштаб окна: ${e.cause ?: e}"
         }
     }
 

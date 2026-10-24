@@ -47,6 +47,23 @@ class PresetService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- масштаб приложений в живых окнах ----------
+
+  static String _scaleKey(String pkg) => 'app_scale_$pkg';
+
+  /// Масштаб приложения в окне, % (100 — как есть). Хранится по пакету,
+  /// поэтому действует в любом окне и любом пресете.
+  int scaleFor(String pkg) => (_prefs.getInt(_scaleKey(pkg)) ?? 100).clamp(50, 150);
+
+  Future<void> setScale(String pkg, int percent) async {
+    if (percent == 100) {
+      await _prefs.remove(_scaleKey(pkg));
+    } else {
+      await _prefs.setInt(_scaleKey(pkg), percent.clamp(50, 150));
+    }
+    notifyListeners();
+  }
+
   Future<void> clear(String slotId) async {
     await _prefs.remove(_appKey(slotId));
     await _prefs.remove(_widgetKey(slotId));

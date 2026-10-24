@@ -200,6 +200,14 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   только верх окна, текст «Напряжение датчиков» обрезан), музыка снизу.
   Скругление углов ActivityView через скрытый `setCornerRadius` на магнитоле
   РАБОТАЕТ. TPMS по словам пользователя «не умеет нормально масштабироваться».
+- **Масштаб приложения в живом окне** (режим правки → кнопка «🔍 N%» внизу
+  слева на окне с приложением, только в живом режиме): 50–150%, хранится
+  по пакету (`PresetService.scaleFor`, ключ `app_scale_<pkg>`), действует
+  во всех окнах/пресетах. Реализация: `AppWindowSpec.densityDpi`
+  (= dpr·160·%/100) → нативно `IWindowManager.setForcedDisplayDensityForUser`
+  на виртуальный дисплей ActivityView (`getVirtualDisplayId` или поле
+  `mVirtualDisplay`), до startActivity и повторно через 300 мс. Ошибка — в
+  `lastError`. Сделано для TPMS, который не влезает в окно.
 - Текущая раскладка у пользователя: навигатор сверху (2ГИС / Яндекс), снизу
   музыка (виджет/приложение) и TPMS.
 

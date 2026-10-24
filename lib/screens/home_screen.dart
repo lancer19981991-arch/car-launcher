@@ -190,7 +190,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (bounds == null) continue;
       specs.add(widgetId != null
           ? AppWindowSpec(slotId: r.slotId, packageName: '', boundsPx: bounds, widgetId: widgetId)
-          : AppWindowSpec(slotId: r.slotId, packageName: pkg!, boundsPx: bounds));
+          : AppWindowSpec(
+              slotId: r.slotId,
+              packageName: pkg!,
+              boundsPx: bounds,
+              densityDpi: _densityFor(presets.scaleFor(pkg)),
+            ));
     }
     final settings = context.read<SettingsService>();
     try {
@@ -203,6 +208,63 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         cornerRadiusPx: settings.windowCornerRadius * _dpr,
       );
     } catch (_) {}
+  }
+
+  /// Плотность окна для масштаба приложения: меньше dpi — приложение
+  /// считает экран больше и рисует всё мельче.
+  int _densityFor(int percent) =>
+      percent == 100 ? 0 : (_dpr * 160 * percent / 100).round();
+
+  /// Выбор масштаба приложения в окне (режим правки).
+  Future<void> _pickScale(String pkg) async {
+    final presets = context.read<PresetService>();
+    var value = presets.scaleFor(pkg).toDouble();
+    final label = _apps[pkg]?.label ?? pkg;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Масштаб «$label»: ${value.round()}%',
+                    style: Theme.of(ctx).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                const Text('Меньше — приложение мельче и больше влезает в окно. '
+                    'Применится после «Готово». Приложение перезапустится.'),
+                Slider(
+                  min: 50,
+                  max: 150,
+                  divisions: 20,
+                  value: value,
+                  label: '${value.round()}%',
+                  onChanged: (v) => setSheet(() => value = v),
+                  onChangeEnd: (v) => presets.setScale(pkg, v.round()),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setSheet(() => value = 100);
+                        presets.setScale(pkg, 100);
+                      },
+                      child: const Text('Сбросить (100%)'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Готово')),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _hideLive() async {
@@ -748,6 +810,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _editableWindow(WindowRect r, double areaW, double areaH) {
     final theme = Theme.of(context);
     final slot = slotById(r.slotId);
+    // Масштаб — только для живых окон с приложением.
+    final presets = context.read<PresetService>();
+    final scalePkg = _liveMode && presets.widgetFor(r.slotId) == null ? presets.packageFor(r.slotId) : null;
 
     Widget roundBtn(IconData icon, VoidCallback onTap) => Material(
           color: theme.colorScheme.surface.withValues(alpha: 0.9),
@@ -779,6 +844,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           Positioned(top: 6, left: 6, child: roundBtn(Icons.settings_rounded, () => _pickContent(slot))),
           Positioned(top: 6, right: 6, child: roundBtn(Icons.delete_outline_rounded, () => _removeWindow(r.slotId))),
+          if (scalePkg != null)
+            Positioned(
+              left: 6,
+              bottom: 6,
+              child: Material(
+                color: theme.colorScheme.surface.withValues(alpha: 0.9),
+                shape: const StadiumBorder(),
+                elevation: 2,
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: () => _pickScale(scalePkg),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.zoom_in_rounded, size: 20),
+                        const SizedBox(width: 4),
+                        Text('${context.read<PresetService>().scaleFor(scalePkg)}%'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             right: 0,
             bottom: 0,

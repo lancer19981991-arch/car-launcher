@@ -19,6 +19,7 @@ class AppWindowSpec {
     required this.packageName,
     required this.boundsPx,
     this.widgetId = 0,
+    this.densityDpi = 0,
   });
 
   final String slotId;
@@ -28,6 +29,9 @@ class AppWindowSpec {
   /// 0 — в окне приложение; иначе id виджета рабочего стола.
   final int widgetId;
 
+  /// Плотность экрана окна (масштаб приложения); 0 — как у экрана.
+  final int densityDpi;
+
   Map<String, Object> toMap() => {
         'slotId': slotId,
         'packageName': packageName,
@@ -36,6 +40,7 @@ class AppWindowSpec {
         'width': boundsPx.width.round(),
         'height': boundsPx.height.round(),
         'widgetId': widgetId,
+        'densityDpi': densityDpi,
       };
 }
 

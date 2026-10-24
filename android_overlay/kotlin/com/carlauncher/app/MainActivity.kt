@@ -153,6 +153,7 @@ class MainActivity : FlutterActivity() {
                                 width = (m["width"] as? Int) ?: 0,
                                 height = (m["height"] as? Int) ?: 0,
                                 widgetId = (m["widgetId"] as? Int) ?: 0,
+                                densityDpi = (m["densityDpi"] as? Int) ?: 0,
                             )
                         }
                         val p = call.argument<Map<String, Any>>("pill")

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/weather_place.dart';
 import '../models/window_rect.dart';
+import '../widgets/wallpaper_background.dart';
 
 /// Хранит пользовательские настройки лаунчера на устройстве
 /// (тема, выбранный вариант фона и т.п.) через SharedPreferences.
@@ -34,6 +35,15 @@ class SettingsService extends ChangeNotifier {
   static const _kWeatherOnKey = 'weather_enabled';
   static const _kWeatherCityKey = 'weather_city';
   static const _kYandexKey = 'weather_yandex_key';
+  static const _kWallpaperKey = 'wallpaper';
+
+  /// Фон главного экрана.
+  Wallpaper get wallpaper => Wallpaper.byName(_prefs.getString(_kWallpaperKey));
+
+  Future<void> setWallpaper(Wallpaper w) async {
+    await _prefs.setString(_kWallpaperKey, w.name);
+    notifyListeners();
+  }
 
   /// Личный ключ Яндекс.Погоды; null — Яндекс не используется.
   String? get yandexWeatherKey {

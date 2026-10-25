@@ -5,6 +5,7 @@ import '../models/weather_place.dart';
 import '../services/native_bridge.dart';
 import '../services/settings_service.dart';
 import '../services/weather_service.dart';
+import '../widgets/wallpaper_background.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -212,6 +213,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text('Фон'),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final w in Wallpaper.values)
+                        _WallpaperTile(
+                          kind: w,
+                          selected: settings.wallpaper == w,
+                          onTap: () => settings.setWallpaper(w),
+                        ),
+                    ],
+                  ),
+                  const Divider(height: 32),
                   const Text('Подсветка контура окон'),
                   const SizedBox(height: 12),
                   Wrap(
@@ -461,6 +477,44 @@ class _CitySearchDialogState extends State<_CitySearchDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
       ],
+    );
+  }
+}
+
+/// Плитка выбора фона: превью + название.
+class _WallpaperTile extends StatelessWidget {
+  const _WallpaperTile({required this.kind, required this.selected, required this.onTap});
+
+  final Wallpaper kind;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 96,
+            height: 64,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected ? scheme.primary : scheme.outline.withValues(alpha: 0.4),
+                width: selected ? 3 : 1,
+              ),
+            ),
+            child: WallpaperPreview(kind: kind, cell: 12),
+          ),
+          const SizedBox(height: 4),
+          Text(kind.title, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
     );
   }
 }

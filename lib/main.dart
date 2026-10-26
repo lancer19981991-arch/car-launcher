@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'app.dart';
 import 'services/preset_service.dart';
 import 'services/settings_service.dart';
+import 'services/tpms_service.dart';
 import 'services/weather_service.dart';
 
 Future<void> main() async {
@@ -60,5 +61,7 @@ Future<void> _start() async {
 
   final weather = WeatherService(settings);
 
-  runApp(CarLauncherApp(settings: settings, presets: presets, weather: weather));
+  final tpms = TpmsService();
+
+  runApp(CarLauncherApp(settings: settings, presets: presets, weather: weather, tpms: tpms));
 }

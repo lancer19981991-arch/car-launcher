@@ -56,6 +56,9 @@ class NativeBridge {
   /// Нажатие на нативную пилюлю с часами (поверх живых окон).
   static void Function()? onPillTap;
 
+  /// Сообщение от TPMS-приложения (поля broadcast `TPMS_APP_STATE_SEND`).
+  static void Function(Map<Object?, Object?> data)? onTpms;
+
   static bool _handlerSet = false;
 
   /// Подписаться на входящие вызовы из нативной стороны (один раз).
@@ -68,9 +71,22 @@ class NativeBridge {
         if (slotId != null) onWindowLongPress?.call(slotId);
       } else if (call.method == 'onPillTap') {
         onPillTap?.call();
+      } else if (call.method == 'onTpms') {
+        final data = call.arguments;
+        if (data is Map) onTpms?.call(data);
       }
       return null;
     });
+  }
+
+  /// Последние сообщения TPMS, пойманные до запуска Flutter (по колесу).
+  static Future<List<Map<Object?, Object?>>> getTpmsState() async {
+    try {
+      final raw = await _channel.invokeListMethod<Object?>('getTpmsState') ?? const [];
+      return raw.whereType<Map<Object?, Object?>>().toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   /// Является ли это приложение сейчас лаунчером по умолчанию (ролью HOME).

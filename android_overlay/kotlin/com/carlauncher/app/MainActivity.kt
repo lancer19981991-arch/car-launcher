@@ -4,8 +4,11 @@ import android.app.ActivityOptions
 import android.app.admin.DevicePolicyManager
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -121,6 +124,7 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "getLastLocation" -> result.success(lastLocation())
+                    "getTpmsState" -> result.success(tpmsLast.values.toList())
                     "requestDefaultLauncher" -> {
                         requestDefaultLauncher()
                         result.success(null)
@@ -261,7 +265,50 @@ class MainActivity : FlutterActivity() {
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * Данные шин от TPMS-приложения (TPMS_USB_MG_Uni и совместимые): оно
+     * рассылает broadcast TPMS_APP_STATE_SEND по каждому колесу. Ловим всё
+     * время жизни лаунчера (не только на экране), последнее по колесу
+     * храним — Flutter заберёт при старте.
+     */
+    private val tpmsLast = LinkedHashMap<Int, Map<String, Any?>>()
+
+    private val tpmsReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val extras = intent.extras ?: return
+            val m = HashMap<String, Any?>()
+            for (k in extras.keySet()) {
+                @Suppress("DEPRECATION")
+                val v = extras.get(k)
+                // Через канал проходят только простые типы.
+                m[k] = when (v) {
+                    null, is Boolean, is Int, is Long, is Double, is String -> v
+                    is Float -> v.toDouble()
+                    is Short -> v.toInt()
+                    is Byte -> v.toInt()
+                    else -> v.toString()
+                }
+            }
+            val tire = (m["tires"] as? Number)?.toInt() ?: return
+            tpmsLast[tire] = m
+            channel?.invokeMethod("onTpms", m)
+        }
+    }
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        try {
+            registerReceiver(tpmsReceiver, IntentFilter("TPMS_APP_STATE_SEND"))
+        } catch (e: Throwable) {
+            // не критично — без TPMS-данных
+        }
+    }
+
     override fun onDestroy() {
+        try {
+            unregisterReceiver(tpmsReceiver)
+        } catch (e: Throwable) {
+        }
         backgroundExecutor.shutdown()
         super.onDestroy()
     }

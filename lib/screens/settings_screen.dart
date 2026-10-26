@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/weather_place.dart';
 import '../services/native_bridge.dart';
 import '../services/settings_service.dart';
+import '../services/tpms_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/wallpaper_background.dart';
 
@@ -205,6 +206,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 24),
+          _SectionLabel('Шины (TPMS)'),
+          const _TpmsDiagnostics(),
           const SizedBox(height: 24),
           _SectionLabel('Оформление'),
           Card(
@@ -477,6 +481,51 @@ class _CitySearchDialogState extends State<_CitySearchDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
       ],
+    );
+  }
+}
+
+/// Что пришло от TPMS-приложения — чтобы проверить формат данных.
+class _TpmsDiagnostics extends StatelessWidget {
+  const _TpmsDiagnostics();
+
+  @override
+  Widget build(BuildContext context) {
+    final tpms = context.watch<TpmsService>();
+    final last = tpms.lastAt;
+    final small = Theme.of(context).textTheme.bodySmall;
+    final tires = tpms.tires.values.toList()..sort((a, b) => a.tire.compareTo(b.tire));
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Панель шин ставится в окно: режим правки → ⚙ на окне → «Шины (TPMS)». '
+              'Данные присылает TPMS-приложение (например, TPMS_USB_MG_Uni) — '
+              'оно должно быть установлено и работать в фоне.',
+            ),
+            const SizedBox(height: 12),
+            Text(
+              last == null
+                  ? 'Данных пока не было'
+                  : 'Последние данные: ${DateTime.now().difference(last).inSeconds} с назад',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            for (final t in tires)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Колесо ${t.tire}: ${t.pressureText} ${t.unitShort}, ${t.temperature ?? '—'}°C'
+                  '${t.alarm ? ' ⚠' : ''}\n'
+                  'сырые: ${t.raw.entries.map((e) => '${e.key}=${e.value}').join(', ')}',
+                  style: small,
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

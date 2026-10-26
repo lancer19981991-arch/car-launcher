@@ -12,8 +12,10 @@ import '../models/window_rect.dart';
 import '../services/native_bridge.dart';
 import '../services/preset_service.dart';
 import '../services/settings_service.dart';
+import '../services/tpms_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/dock_clock.dart';
+import '../widgets/tpms_panel.dart';
 import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
 import 'presets_screen.dart';
@@ -186,6 +188,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final widgetId = presets.widgetFor(r.slotId);
       final pkg = presets.packageFor(r.slotId);
       if (widgetId == null && pkg == null) continue;
+      if (pkg == kTpmsPanel) continue; // встроенная панель — рисует Flutter
       final bounds = _boundsPx(r.slotId);
       if (bounds == null) continue;
       specs.add(widgetId != null
@@ -423,7 +426,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// Выбор содержимого окна. В системном режиме — приложение или виджет
   /// рабочего стола; в запасном режиме — только приложение.
   Future<void> _pickContent(PresetSlot slot) async {
-    if (!_liveMode) return _pickApp(slot);
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -436,18 +438,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               subtitle: const Text('Живое окно приложения'),
               onTap: () => Navigator.of(ctx).pop('app'),
             ),
+            if (_liveMode)
+              ListTile(
+                leading: const Icon(Icons.widgets_rounded),
+                title: const Text('Виджет'),
+                subtitle: const Text('Виджет рабочего стола'),
+                onTap: () => Navigator.of(ctx).pop('widget'),
+              ),
             ListTile(
-              leading: const Icon(Icons.widgets_rounded),
-              title: const Text('Виджет'),
-              subtitle: const Text('Виджет рабочего стола (например, TPMS)'),
-              onTap: () => Navigator.of(ctx).pop('widget'),
+              leading: const Icon(Icons.tire_repair_rounded),
+              title: const Text('Шины (TPMS)'),
+              subtitle: const Text('Своя панель давления — данные от TPMS-приложения'),
+              onTap: () => Navigator.of(ctx).pop('tpms'),
             ),
           ],
         ),
       ),
     );
     if (!mounted || choice == null) return;
-    if (choice == 'widget') {
+    if (choice == 'tpms') {
+      final presets = context.read<PresetService>();
+      final oldWidget = presets.widgetFor(slot.id);
+      await presets.assign(slot.id, kTpmsPanel);
+      if (oldWidget != null) _deleteWidgetsIfUnused(presets, [oldWidget]);
+      if (mounted) setState(() {});
+    } else if (choice == 'widget') {
       await _pickWidget(slot);
     } else {
       await _pickApp(slot);
@@ -503,6 +518,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (pickIfEmpty) await _withWindowsHidden(() => _pickContent(slot));
       return true;
     }
+    if (pkg == kTpmsPanel) return true; // панель уже на экране
     if (_liveMode && !_editing) {
       await _syncLiveWindows();
       return true;
@@ -812,7 +828,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final slot = slotById(r.slotId);
     // Масштаб — только для живых окон с приложением.
     final presets = context.read<PresetService>();
-    final scalePkg = _liveMode && presets.widgetFor(r.slotId) == null ? presets.packageFor(r.slotId) : null;
+    final rawPkg = presets.packageFor(r.slotId);
+    final scalePkg = _liveMode && presets.widgetFor(r.slotId) == null && rawPkg != kTpmsPanel ? rawPkg : null;
 
     Widget roundBtn(IconData icon, VoidCallback onTap) => Material(
           color: theme.colorScheme.surface.withValues(alpha: 0.9),
@@ -906,6 +923,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return Icon(Icons.widgets_rounded, size: size * 0.7, color: Theme.of(context).colorScheme.primary);
     }
     final pkg = presets.packageFor(slotId);
+    if (pkg == kTpmsPanel) {
+      return Icon(Icons.tire_repair_rounded, size: size * 0.7, color: Theme.of(context).colorScheme.primary);
+    }
     final app = pkg == null ? null : _apps[pkg];
     if (app != null) return Image.memory(app.icon, width: size, height: size, gaplessPlayback: true);
     return Icon(Icons.add_rounded, size: size * 0.7, color: Theme.of(context).colorScheme.primary);
@@ -918,7 +938,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final widgetId = presets.widgetFor(slotId);
     final pkg = presets.packageFor(slotId);
     final app = pkg == null ? null : _apps[pkg];
-    final missing = pkg != null && _appsLoaded && app == null;
+    final tpmsPanel = pkg == kTpmsPanel;
+    final missing = pkg != null && !tpmsPanel && _appsLoaded && app == null;
 
     // Виджет в системном режиме рисуется нативно поверх; у многих виджетов
     // прозрачный фон — под ним должны быть обои, а не карточка с текстом.
@@ -931,6 +952,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (widgetId != null) {
       title = presets.widgetLabelFor(slotId) ?? 'Виджет';
       subtitle = editing ? 'тяните — переместить, уголок — размер' : 'Виджет';
+    } else if (tpmsPanel) {
+      title = 'Шины (TPMS)';
+      subtitle = editing ? 'тяните — переместить, уголок — размер' : 'Панель давления';
     } else if (pkg == null) {
       title = slot.hint;
       subtitle = editing ? '⚙ — выбрать приложение' : 'Нажмите, чтобы выбрать приложение';
@@ -987,7 +1011,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       child: editing
           ? content
-          : InkWell(
+          : tpmsPanel
+              ? GestureDetector(
+                  onLongPress: () => _withWindowsHidden(() => _pickContent(slot)),
+                  child: const TpmsPanel(),
+                )
+              : InkWell(
               onTap: () {
                 if (_liveMode) {
                   _withWindowsHidden(() => _pickContent(slot));

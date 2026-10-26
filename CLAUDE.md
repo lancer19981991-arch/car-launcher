@@ -217,6 +217,18 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   пользователя — по его фото), «Сетка + свечение» (+ синее радиальное
   свечение снизу), «Чёрный». В живом режиме фон виден в промежутках окон.
   Пользователь проверил (build-38): всё работает.
+- **Встроенная панель шин (TPMS)**: пользователь нашёл, что приложение
+  `TPMS_USB_MG_Uni V2.4.6` шлёт broadcast `TPMS_APP_STATE_SEND` на каждое
+  колесо (extras: lowpower/leakage/nosignal boolean, airpressure int,
+  temperature int, tires int — номер колеса, presunit String). Ловит
+  `MainActivity.tpmsReceiver` (регистрация в onCreate, кэш по колесу,
+  `getTpmsState`, во Flutter — `onTpms`). `lib/services/tpms_service.dart`
+  (`TpmsService`, `TireState`), виджет `lib/widgets/tpms_panel.dart`.
+  В окно ставится как «пакет» `kTpmsPanel = '@tpms'` (выбор содержимого →
+  «Шины (TPMS)»; живого окна не создаётся, рисует Flutter; масштаб не нужен).
+  ПРЕДПОЛОЖЕНИЯ (проверить по диагностике в Настройки → «Шины (TPMS)», там
+  сырые поля): давление в кПа (213 → 2.13 бар, перевод по presunit); номера
+  колёс 0–3 или 1–4 → ПЛ, ПП, ЗЛ, ЗП по возрастанию.
 - Текущая раскладка у пользователя: навигатор сверху (2ГИС / Яндекс), снизу
   музыка (виджет/приложение) и TPMS.
 

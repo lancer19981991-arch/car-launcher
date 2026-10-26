@@ -5,6 +5,7 @@ import '../models/layout_preset.dart';
 import '../services/native_bridge.dart';
 import '../services/preset_service.dart';
 import '../services/settings_service.dart';
+import '../services/tpms_service.dart';
 
 /// Список сохранённых пресетов: сохранить текущую раскладку, включить,
 /// перезаписать, переименовать, удалить. Возвращает пресет, который
@@ -43,7 +44,9 @@ class PresetsScreen extends StatelessWidget {
     for (final r in p.layout) {
       final c = p.slots[r.slotId];
       if (c == null) continue;
-      parts.add(c.packageName != null
+      parts.add(c.packageName == kTpmsPanel
+          ? 'Шины (TPMS)'
+          : c.packageName != null
           ? (appLabels[c.packageName] ?? c.packageName!)
           : (c.widgetLabel ?? 'Виджет'));
     }

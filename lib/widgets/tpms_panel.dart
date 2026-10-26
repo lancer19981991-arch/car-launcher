@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/settings_service.dart';
 import '../services/tpms_service.dart';
 
 /// Встроенная панель шин: схема машины сверху и четыре колеса вокруг.
@@ -11,7 +12,7 @@ class TpmsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tpms = context.watch<TpmsService>();
-    final pos = tpms.byPosition;
+    final pos = tpms.byPosition(context.watch<SettingsService>().tpmsMap);
     final last = tpms.lastAt;
     final stale = last == null || DateTime.now().difference(last) > const Duration(minutes: 5);
 
@@ -70,8 +71,15 @@ class _TireColumn extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       crossAxisAlignment: left ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
-        _Tire(state: front, left: left, scale: scale),
-        _Tire(state: rear, left: left, scale: scale),
+        for (final st in [front, rear])
+          // Если окно узкое — цифры ужимаются, а не обрезаются.
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: left ? Alignment.centerRight : Alignment.centerLeft,
+              child: _Tire(state: st, left: left, scale: scale),
+            ),
+          ),
       ],
     );
   }

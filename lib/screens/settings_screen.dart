@@ -492,6 +492,7 @@ class _TpmsDiagnostics extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tpms = context.watch<TpmsService>();
+    final settings = context.watch<SettingsService>();
     final last = tpms.lastAt;
     final small = Theme.of(context).textTheme.bodySmall;
     final tires = tpms.tires.values.toList()..sort((a, b) => a.tire.compareTo(b.tire));
@@ -513,6 +514,36 @@ class _TpmsDiagnostics extends StatelessWidget {
                   : 'Последние данные: ${DateTime.now().difference(last).inSeconds} с назад',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
+            const SizedBox(height: 12),
+            const Text('Расположение колёс', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(
+              'Если на панели колёса перепутаны — выберите для каждого места колесо, '
+              'сверяясь по давлению и температуре с TPMS-приложением.',
+              style: small,
+            ),
+            for (var i = 0; i < 4; i++)
+              Row(
+                children: [
+                  SizedBox(width: 110, child: Text(TpmsService.positionNames[i])),
+                  Expanded(
+                    child: DropdownButton<int?>(
+                      isExpanded: true,
+                      value: tires.any((t) => t.tire == settings.tpmsMap[i]) ? settings.tpmsMap[i] : null,
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('Авто')),
+                        for (final t in tires)
+                          DropdownMenuItem<int?>(
+                            value: t.tire,
+                            child: Text('Колесо ${t.tire}: ${t.pressureText} ${t.unitShort}, '
+                                '${t.temperature ?? '—'}°C'),
+                          ),
+                      ],
+                      onChanged: (v) => settings.setTpmsMapAt(i, v),
+                    ),
+                  ),
+                ],
+              ),
+            const SizedBox(height: 12),
             for (final t in tires)
               Padding(
                 padding: const EdgeInsets.only(top: 6),

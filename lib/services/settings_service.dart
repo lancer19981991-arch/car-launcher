@@ -36,6 +36,21 @@ class SettingsService extends ChangeNotifier {
   static const _kWeatherCityKey = 'weather_city';
   static const _kYandexKey = 'weather_yandex_key';
   static const _kWallpaperKey = 'wallpaper';
+  static const _kTpmsMapKey = 'tpms_map';
+
+  /// Какой номер колеса из TPMS-приложения стоит на каждом месте
+  /// (ПЛ, ПП, ЗЛ, ЗП); null — автоматически.
+  List<int?> get tpmsMap {
+    final parts = (_prefs.getString(_kTpmsMapKey) ?? '').split(',');
+    return [for (var i = 0; i < 4; i++) i < parts.length ? int.tryParse(parts[i]) : null];
+  }
+
+  Future<void> setTpmsMapAt(int position, int? tire) async {
+    final m = tpmsMap;
+    m[position] = tire;
+    await _prefs.setString(_kTpmsMapKey, m.map((e) => e?.toString() ?? '').join(','));
+    notifyListeners();
+  }
 
   /// Фон главного экрана.
   Wallpaper get wallpaper => Wallpaper.byName(_prefs.getString(_kWallpaperKey));

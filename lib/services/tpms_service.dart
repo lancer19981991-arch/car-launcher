@@ -46,10 +46,10 @@ class TireState {
     final p = pressureRaw;
     if (p == null) return '—';
     final u = unit.toLowerCase();
-    if (u.contains('psi')) return (p * 0.145038).toStringAsFixed(0);
+    if (u.contains('psi')) return (p * 0.145038).toStringAsFixed(1).replaceAll('.', ',');
     if (u.contains('kpa')) return '$p';
-    // Бар (по умолчанию): кПа / 100.
-    return (p / 100).toStringAsFixed(2);
+    // Бар (по умолчанию): кПа / 100. Запятая — как в TPMS-приложении.
+    return (p / 100).toStringAsFixed(2).replaceAll('.', ',');
   }
 
   String get unitShort {
@@ -98,12 +98,18 @@ class TpmsService extends ChangeNotifier {
   DateTime? get lastAt =>
       _tires.values.isEmpty ? null : _tires.values.map((t) => t.at).reduce((a, b) => a.isAfter(b) ? a : b);
 
-  /// Четыре колеса по местам: ПЛ, ПП, ЗЛ, ЗП. Номера колёс приложение
-  /// может считать с 0 или с 1 — берём четыре наименьших номера по порядку.
-  List<TireState?> get byPosition {
+  /// Названия мест — в порядке [byPosition].
+  static const positionNames = ['Перед-лево', 'Перед-право', 'Зад-лево', 'Зад-право'];
+
+  /// Четыре колеса по местам: ПЛ, ПП, ЗЛ, ЗП. [map] — номер колеса для
+  /// каждого места, выбранный пользователем (null — автоматически: четыре
+  /// наименьших номера по порядку, считая с 0 или с 1).
+  List<TireState?> byPosition(List<int?> map) {
     final keys = _tires.keys.toList()..sort();
     final base = keys.isEmpty ? 0 : (keys.first >= 1 ? 1 : 0);
-    return [for (var i = 0; i < 4; i++) _tires[base + i]];
+    return [
+      for (var i = 0; i < 4; i++) _tires[(i < map.length ? map[i] : null) ?? base + i],
+    ];
   }
 
   Future<void> _loadCached() async {

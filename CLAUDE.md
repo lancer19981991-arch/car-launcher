@@ -239,6 +239,21 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   build-40: пользователю нравится — «минималистично, то что нужно».
   Грабли: шаг «Publish as GitHub Release asset» может упасть из-за сбоя
   GitHub при загрузке — сборка при этом целая; помог `gh run rerun --failed`.
+- **Приборы OBD (ELM327 по Bluetooth)**: машина Nissan Teana J32, VQ25DE;
+  адаптер Bluetooth ELM327, с ним на магнитоле работают Car Scanner и CVTz
+  (параметры вариатора, его температура — Nissan-специфичные PID, пока не
+  делали). Нативно `ObdClient.kt`: SPP RFCOMM (secure → insecure →
+  reflection createRfcommSocket(1)), init ATZ/ATE0/ATL0/ATS0/ATH0/ATSP0,
+  цикл ATRV (напряжение) + 0105 (ОЖ = A−40) раз в ~1.5 с, переподключение
+  через 5 с. Работает ТОЛЬКО пока лаунчер на экране (onStart→resume,
+  onStop→pause) — чтобы Car Scanner/CVTz могли занять адаптер. Канал:
+  `obdSetAddress`, `obdPairedDevices`, во Flutter `onObd`
+  (state/message/voltage/coolant/ecuSilent). Flutter: `lib/services/obd_service.dart`
+  (`kObdPanel = '@obd'`), `lib/widgets/obd_panel.dart`, настройки «Приборы
+  (OBD, ELM327)» (выбор сопряжённого адаптера, `obd_enabled/obd_address/obd_name`).
+  Встроенные панели (`@tpms`, `@obd`) — `_isBuiltin(pkg)` в home_screen.
+  Цвета: напряжение <11.8/>15 красный, <12.2/>14.7 жёлтый; ОЖ ≥105 красный,
+  ≥100 жёлтый, <60 голубой (не прогрет).
 - Текущая раскладка у пользователя: навигатор сверху (2ГИС / Яндекс), снизу
   музыка (виджет/приложение) и TPMS.
 

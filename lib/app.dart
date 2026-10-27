@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/home_screen.dart';
+import 'services/obd_service.dart';
 import 'services/preset_service.dart';
 import 'services/settings_service.dart';
 import 'services/tpms_service.dart';
@@ -15,12 +16,14 @@ class CarLauncherApp extends StatelessWidget {
     required this.presets,
     required this.weather,
     required this.tpms,
+    required this.obd,
   });
 
   final SettingsService settings;
   final PresetService presets;
   final WeatherService weather;
   final TpmsService tpms;
+  final ObdService obd;
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +33,7 @@ class CarLauncherApp extends StatelessWidget {
         ChangeNotifierProvider<PresetService>.value(value: presets),
         ChangeNotifierProvider<WeatherService>.value(value: weather),
         ChangeNotifierProvider<TpmsService>.value(value: tpms),
+        ChangeNotifierProvider<ObdService>.value(value: obd),
       ],
       child: Consumer<SettingsService>(
         builder: (context, settings, _) {

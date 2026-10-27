@@ -37,6 +37,28 @@ class SettingsService extends ChangeNotifier {
   static const _kYandexKey = 'weather_yandex_key';
   static const _kWallpaperKey = 'wallpaper';
   static const _kTpmsMapKey = 'tpms_map';
+  static const _kObdOnKey = 'obd_enabled';
+  static const _kObdAddrKey = 'obd_address';
+  static const _kObdNameKey = 'obd_name';
+
+  /// Опрашивать OBD-адаптер ELM327.
+  bool get obdEnabled => _prefs.getBool(_kObdOnKey) ?? false;
+
+  Future<void> setObdEnabled(bool v) async {
+    await _prefs.setBool(_kObdOnKey, v);
+    notifyListeners();
+  }
+
+  /// MAC-адрес и имя выбранного адаптера.
+  String? get obdAddress => _prefs.getString(_kObdAddrKey);
+  String? get obdName => _prefs.getString(_kObdNameKey);
+
+  Future<void> setObdAdapter(String address, String name) async {
+    await _prefs.setString(_kObdAddrKey, address);
+    await _prefs.setString(_kObdNameKey, name);
+    await _prefs.setBool(_kObdOnKey, true);
+    notifyListeners();
+  }
 
   /// Какой номер колеса из TPMS-приложения стоит на каждом месте
   /// (ПЛ, ПП, ЗЛ, ЗП); null — автоматически.

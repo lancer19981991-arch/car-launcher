@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/weather_place.dart';
 import '../services/native_bridge.dart';
+import '../services/obd_service.dart';
 import '../services/settings_service.dart';
 import '../services/tpms_service.dart';
 import '../services/weather_service.dart';
@@ -206,6 +207,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 24),
+          _SectionLabel('Приборы (OBD, ELM327)'),
+          const _ObdSettings(),
           const SizedBox(height: 24),
           _SectionLabel('Шины (TPMS)'),
           const _TpmsDiagnostics(),
@@ -481,6 +485,81 @@ class _CitySearchDialogState extends State<_CitySearchDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
       ],
+    );
+  }
+}
+
+/// OBD-адаптер: включение, выбор адаптера, статус и показания.
+class _ObdSettings extends StatelessWidget {
+  const _ObdSettings();
+
+  Future<void> _pickAdapter(BuildContext context) async {
+    final settings = context.read<SettingsService>();
+    final devices = await NativeBridge.obdPairedDevices();
+    if (!context.mounted) return;
+    final picked = await showDialog<Map<Object?, Object?>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Адаптер OBD'),
+        content: SizedBox(
+          width: 400,
+          child: devices.isEmpty
+              ? const Text('Сопряжённых Bluetooth-устройств нет. Сначала сопрягите '
+                  'ELM327 в настройках Bluetooth магнитолы (PIN обычно 1234 или 0000).')
+              : ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final d in devices)
+                      ListTile(
+                        leading: const Icon(Icons.bluetooth_rounded),
+                        title: Text('${d['name']}'),
+                        subtitle: Text('${d['address']}'),
+                        onTap: () => Navigator.of(ctx).pop(d),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Отмена'))],
+      ),
+    );
+    if (picked != null) await settings.setObdAdapter('${picked['address']}', '${picked['name']}');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsService>();
+    final obd = context.watch<ObdService>();
+    return Card(
+      child: Column(
+        children: [
+          SwitchListTile(
+            title: const Text('Опрашивать OBD-адаптер'),
+            subtitle: const Text('Пока лаунчер на экране. В других приложениях '
+                '(Car Scanner, CVTz) адаптер свободен.'),
+            value: settings.obdEnabled && settings.obdAddress != null,
+            onChanged: (v) {
+              if (v && settings.obdAddress == null) {
+                _pickAdapter(context);
+              } else {
+                settings.setObdEnabled(v);
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.bluetooth_rounded),
+            title: Text(settings.obdName ?? 'Адаптер не выбран'),
+            subtitle: Text(settings.obdEnabled ? obd.statusText : (settings.obdAddress ?? '')),
+            trailing: TextButton(onPressed: () => _pickAdapter(context), child: const Text('Выбрать')),
+          ),
+          if (settings.obdEnabled && obd.state == 'connected')
+            ListTile(
+              leading: const Icon(Icons.speed_rounded),
+              title: Text('Сеть: ${obd.voltage?.toStringAsFixed(1) ?? '—'} В · '
+                  'Двигатель: ${obd.coolant ?? '—'} °C'),
+              subtitle: const Text('Панель в окно: режим правки → ⚙ на окне → «Приборы (OBD)»'),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -59,6 +59,9 @@ class NativeBridge {
   /// Сообщение от TPMS-приложения (поля broadcast `TPMS_APP_STATE_SEND`).
   static void Function(Map<Object?, Object?> data)? onTpms;
 
+  /// Состояние OBD-адаптера и показания (state, message, voltage, coolant…).
+  static void Function(Map<Object?, Object?> data)? onObd;
+
   static bool _handlerSet = false;
 
   /// Подписаться на входящие вызовы из нативной стороны (один раз).
@@ -74,9 +77,29 @@ class NativeBridge {
       } else if (call.method == 'onTpms') {
         final data = call.arguments;
         if (data is Map) onTpms?.call(data);
+      } else if (call.method == 'onObd') {
+        final data = call.arguments;
+        if (data is Map) onObd?.call(data);
       }
       return null;
     });
+  }
+
+  /// Включить OBD с адаптером [address] (MAC) или выключить (null).
+  static Future<void> obdSetAddress(String? address) async {
+    try {
+      await _channel.invokeMethod('obdSetAddress', {'address': address});
+    } catch (_) {}
+  }
+
+  /// Сопряжённые Bluetooth-устройства: [{name, address}].
+  static Future<List<Map<Object?, Object?>>> obdPairedDevices() async {
+    try {
+      final raw = await _channel.invokeListMethod<Object?>('obdPairedDevices') ?? const [];
+      return raw.whereType<Map<Object?, Object?>>().toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   /// Последние сообщения TPMS, пойманные до запуска Flutter (по колесу).

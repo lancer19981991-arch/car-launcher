@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app.dart';
+import 'services/obd_service.dart';
 import 'services/preset_service.dart';
 import 'services/settings_service.dart';
 import 'services/tpms_service.dart';
@@ -62,6 +63,7 @@ Future<void> _start() async {
   final weather = WeatherService(settings);
 
   final tpms = TpmsService();
+  final obd = ObdService(settings);
 
-  runApp(CarLauncherApp(settings: settings, presets: presets, weather: weather, tpms: tpms));
+  runApp(CarLauncherApp(settings: settings, presets: presets, weather: weather, tpms: tpms, obd: obd));
 }

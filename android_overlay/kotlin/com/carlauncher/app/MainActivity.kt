@@ -48,14 +48,22 @@ class MainActivity : FlutterActivity() {
     /** Ожидающий ответ Flutter на настройку виджета (bindWidget). */
     private var pendingConfigure: Pair<Int, MethodChannel.Result>? = null
 
+    /** OBD-адаптер ELM327: данные уходят во Flutter как onObd. */
+    private val obd by lazy {
+        ObdClient { m -> channel?.invokeMethod("onObd", m) }
+    }
+
     override fun onStart() {
         super.onStart()
         widgetSupport.startListening()
+        obd.resume()
     }
 
     override fun onStop() {
         super.onStop()
         widgetSupport.stopListening()
+        // Отпускаем адаптер — им могут пользоваться Car Scanner / CVTz.
+        obd.pause()
     }
 
     @Deprecated("FlutterActivity still routes results here")
@@ -125,6 +133,11 @@ class MainActivity : FlutterActivity() {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "getLastLocation" -> result.success(lastLocation())
                     "getTpmsState" -> result.success(tpmsLast.values.toList())
+                    "obdSetAddress" -> {
+                        obd.setAddress(call.argument<String>("address"))
+                        result.success(null)
+                    }
+                    "obdPairedDevices" -> result.success(obd.pairedDevices())
                     "requestDefaultLauncher" -> {
                         requestDefaultLauncher()
                         result.success(null)

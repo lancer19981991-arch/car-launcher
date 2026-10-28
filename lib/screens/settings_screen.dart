@@ -558,6 +558,37 @@ class _ObdSettings extends StatelessWidget {
                   'Двигатель: ${obd.coolant ?? '—'} °C'),
               subtitle: const Text('Панель в окно: режим правки → ⚙ на окне → «Приборы (OBD)»'),
             ),
+          if (settings.obdEnabled && obd.state == 'connected')
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Вариатор: ${obd.cvtTemp == null ? '—' : '${obd.cvtTemp!.toStringAsFixed(1)} °C'}'
+                    '${obd.cvtBytes != null && obd.cvtBytes!.length > 29 ? '  (байт AD = ${obd.cvtBytes![29]})' : ''}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (obd.cvtNote != null) Text(obd.cvtNote!, style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Сверка с CVTz: сравните эту температуру с CVTz в ту же минуту. '
+                    'Если не совпадает — пришлите фото этого экрана вместе с цифрой из CVTz.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (obd.cvtBytes != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      [
+                        for (var i = 0; i < obd.cvtBytes!.length; i++)
+                          '${ObdService.byteName(i)}=${obd.cvtBytes![i]}',
+                      ].join('  '),
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
         ],
       ),
     );

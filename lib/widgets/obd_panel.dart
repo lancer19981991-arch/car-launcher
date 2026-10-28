@@ -23,9 +23,18 @@ class ObdPanel extends StatelessWidget {
     return Colors.white;
   }
 
+  static Color _cvtColor(double? t) {
+    if (t == null) return Colors.white38;
+    if (t >= 105) return const Color(0xFFFF1744);
+    if (t >= 90) return const Color(0xFFFFC400);
+    if (t < 40) return const Color(0xFF40C4FF); // ещё не прогрет
+    return Colors.white;
+  }
+
   @override
   Widget build(BuildContext context) {
     final obd = context.watch<ObdService>();
+    final cvt = obd.cvtTemp;
     final v = obd.voltage;
     final t = obd.coolant;
     final ok = obd.state == 'connected';
@@ -41,13 +50,20 @@ class ObdPanel extends StatelessWidget {
       unit: '°C',
       color: ok ? _tempColor(t) : Colors.white38,
     );
+    final gear = _Gauge(
+      icon: Icons.settings_rounded,
+      value: cvt == null ? '—' : '${cvt.round()}',
+      unit: '°C',
+      color: ok ? _cvtColor(cvt) : Colors.white38,
+    );
+    final items = [volt, temp, gear];
     return ColoredBox(
       color: const Color(0xE6080A0F),
       child: LayoutBuilder(builder: (context, c) {
         final wide = c.maxWidth > c.maxHeight * 1.2;
         final gauges = wide
-            ? Row(children: [Expanded(child: volt), Expanded(child: temp)])
-            : Column(children: [Expanded(child: volt), Expanded(child: temp)]);
+            ? Row(children: [for (final g in items) Expanded(child: g)])
+            : Column(children: [for (final g in items) Expanded(child: g)]);
         return Padding(
           padding: const EdgeInsets.all(8),
           child: Column(

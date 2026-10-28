@@ -26,6 +26,12 @@ class ObdService extends ChangeNotifier {
   double? voltage;
   int? coolant;
 
+  /// Температура вариатора (Nissan, блок 7E1, 2101 байт AD) и сырые байты
+  /// ответа — для сверки с CVTz; [cvtNote] — что пошло не так.
+  double? cvtTemp;
+  List<int>? cvtBytes;
+  String? cvtNote;
+
   /// Блок двигателя не отвечает (зажигание выключено).
   bool ecuSilent = false;
   DateTime? lastAt;
@@ -38,6 +44,8 @@ class ObdService extends ChangeNotifier {
     if (addr == null) {
       voltage = null;
       coolant = null;
+      cvtTemp = null;
+      cvtBytes = null;
     }
     NativeBridge.obdSetAddress(addr);
   }
@@ -51,10 +59,21 @@ class ObdService extends ChangeNotifier {
       final c = m['coolant'];
       coolant = c is num ? c.toInt() : null;
       ecuSilent = m['ecuSilent'] == true;
+      final t = m['cvtTemp'];
+      final b = m['cvtBytes'];
+      if (t is num || b is List || m['cvtNote'] != null) {
+        cvtTemp = t is num ? t.toDouble() : null;
+        cvtBytes = b is List ? b.whereType<num>().map((e) => e.toInt()).toList() : null;
+        cvtNote = m['cvtNote'] as String?;
+      }
       lastAt = DateTime.now();
     }
     notifyListeners();
   }
+
+  /// Имя байта как в Torque: 0 → A, 25 → Z, 26 → AA, 29 → AD.
+  static String byteName(int i) =>
+      i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(64 + i ~/ 26) + String.fromCharCode(65 + i % 26);
 
   String get statusText {
     switch (state) {

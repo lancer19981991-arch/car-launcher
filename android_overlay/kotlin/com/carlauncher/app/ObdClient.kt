@@ -108,21 +108,25 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
         if (!alive(my)) return
         val io = Elm(s)
 
+        // Инициализация как в CVTz у пользователя. Протокол машины известен
+        // (Teana J32: ISO 15765-4 CAN 11 бит 500k) — ATSP6, без автопоиска.
         io.cmd("ATZ", 4000)
-        io.cmd("ATE0")
-        io.cmd("ATL0")
-        io.cmd("ATS0")
-        io.cmd("ATH0")
-        io.cmd("ATSP0")
+        for (c in listOf("ATE0", "ATM0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATST32", "ATAL", "ATSP6")) {
+            io.cmd(c)
+        }
         emit("connected", null)
 
         var voltage: Double? = null
         var coolant: Int? = null
+        var cvt: CvtReading? = null
+        var round = 0
         while (alive(my)) {
             voltage = parseVoltage(io.cmd("ATRV")) ?: voltage
-            // Первый запрос PID может идти долго: адаптер ищет протокол.
-            val c = io.cmd("0105", 8000)
+            val c = io.cmd("0105", 5000)
             coolant = parsePid(c, "4105")?.let { it - 40 }
+            // Вариатор — каждый второй круг (~3 с): запрос длинный.
+            if (round % 2 == 0 && coolant != null) cvt = readCvt(io)
+            round++
             if (!alive(my)) break
             emit(
                 "connected",
@@ -132,9 +136,43 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
                     "coolant" to coolant,
                     // Двигатель не отвечает (заглушён / зажигание выключено).
                     "ecuSilent" to (coolant == null),
+                    "cvtTemp" to cvt?.temp,
+                    "cvtBytes" to cvt?.bytes,
+                    "cvtNote" to cvt?.note,
                 ),
             )
             Thread.sleep(1500)
+        }
+    }
+
+    /** Ответ блока вариатора: байты данных 2101 и посчитанная температура. */
+    private class CvtReading(val bytes: List<Int>?, val temp: Double?, val note: String?)
+
+    /**
+     * Вариатор Nissan (блок 7E1, ответ 7E9): открыть диагностический сеанс
+     * 10C0, запросить 2101 (длинный ответ из нескольких кадров), закрыть
+     * сеанс и вернуть адаптер к обычным запросам (7DF).
+     * Температура — байт AD (30-й) по формуле из Torque-файла для Murano Z51;
+     * для JF011E у Teana надо сверить с CVTz.
+     */
+    private fun readCvt(io: Elm): CvtReading {
+        try {
+            for (c in listOf("ATSH7E1", "ATCRA7E9", "ATFCSH7E1", "ATFCSD300000", "ATFCSM1")) io.cmd(c)
+            io.cmd("10C0", 3000)
+            val r = io.cmd("2101", 5000)
+            io.cmd("1081", 3000)
+            val bytes = parseMultiFrame(r, "6101")
+                ?: return CvtReading(null, null, "Вариатор ответил: ${r.replace('\r', ' ').take(60)}")
+            val ad = bytes.getOrNull(29)
+            val temp = ad?.let { cvtTemp(it) }
+            return CvtReading(bytes, temp, if (ad == null) "Ответ короче ожидаемого (${bytes.size} байт)" else null)
+        } catch (e: IOException) {
+            throw e
+        } catch (e: Throwable) {
+            return CvtReading(null, null, "Ошибка разбора: ${e.message}")
+        } finally {
+            // Назад к обычным запросам OBD (функциональный адрес 7DF).
+            for (c in listOf("ATAR", "ATFCSM0", "ATSH7DF")) io.cmd(c)
         }
     }
 
@@ -215,6 +253,39 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
         fun parseVoltage(r: String): Double? =
             Regex("""(\d{1,2}[.,]\d)\s*V""", RegexOption.IGNORE_CASE).find(r)
                 ?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()
+
+        /** Температура вариатора по байту AD (многочлен из Torque-файла). */
+        fun cvtTemp(ad: Int): Double {
+            val x = ad.toDouble()
+            return 0.000000002344 * Math.pow(x, 5.0) - 0.000001387 * Math.pow(x, 4.0) +
+                0.0003193 * Math.pow(x, 3.0) - 0.03501 * x * x + 2.302 * x - 36.6
+        }
+
+        /**
+         * Длинный ответ ELM327 (ATH0, ATS0, ATCAF1): первая строка — длина,
+         * дальше «0:6101…», «1:…» и т.д. Склеиваем, ищем заголовок и
+         * возвращаем байты данных после него (A, B, C… как в Torque).
+         */
+        fun parseMultiFrame(r: String, header: String): List<Int>? {
+            val sb = StringBuilder()
+            for (raw in r.split('\r', '\n')) {
+                val line = raw.trim().replace(" ", "").uppercase()
+                if (line.isEmpty()) continue
+                val colon = line.indexOf(':')
+                if (colon in 1..2) {
+                    sb.append(line.substring(colon + 1))
+                } else if (line.length <= 3 && sb.isEmpty() && line.all { it.isDigit() || it in 'A'..'F' }) {
+                    continue // длина ответа
+                } else {
+                    sb.append(line)
+                }
+            }
+            val all = sb.toString()
+            val i = all.indexOf(header)
+            if (i < 0) return null
+            val data = all.substring(i + header.length)
+            return (0 until data.length / 2).mapNotNull { data.substring(it * 2, it * 2 + 2).toIntOrNull(16) }
+        }
 
         /** Первый байт данных после заголовка ответа (например «4105» + «7B»). */
         fun parsePid(r: String, header: String): Int? {

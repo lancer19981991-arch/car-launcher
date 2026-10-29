@@ -17,6 +17,7 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import io.flutter.embedding.android.FlutterActivity
@@ -133,6 +134,11 @@ class MainActivity : FlutterActivity() {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "getLastLocation" -> result.success(lastLocation())
                     "getTpmsState" -> result.success(tpmsLast.values.toList())
+                    "runAutostart" -> {
+                        val pkgs = call.argument<List<String>>("packages") ?: emptyList()
+                        val force = call.argument<Boolean>("force") ?: false
+                        result.success(runAutostart(pkgs, force))
+                    }
                     "obdSetAddress" -> {
                         obd.setAddress(call.argument<String>("address"))
                         result.success(null)
@@ -315,6 +321,48 @@ class MainActivity : FlutterActivity() {
         } catch (e: Throwable) {
             // не критично — без TPMS-данных
         }
+    }
+
+    /**
+     * Свой автозапуск: прошивка разрешает в автозагрузку только одно
+     * приложение (у пользователя это лаунчер), поэтому остальное (TPMS)
+     * запускает лаунчер — один раз за включение. Приложение открывается
+     * (так стартует его фоновая служба), затем лаунчер возвращается на экран.
+     * Возвращает true, если запуск начат.
+     */
+    private fun runAutostart(pkgs: List<String>, force: Boolean): Boolean {
+        if (pkgs.isEmpty()) return false
+        // Момент включения (с точностью до минуты) — отличает новую загрузку.
+        val bootMinute = (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 60000
+        val prefs = getSharedPreferences("autostart", MODE_PRIVATE)
+        if (!force && prefs.getLong("boot", -1) == bootMinute) return false
+        prefs.edit().putLong("boot", bootMinute).apply()
+
+        var delay = if (force) 300L else 4000L
+        for (pkg in pkgs) {
+            mainHandler.postDelayed({
+                try {
+                    packageManager.getLaunchIntentForPackage(pkg)?.let {
+                        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(it)
+                    }
+                } catch (e: Throwable) {
+                    // приложение удалено — пропускаем
+                }
+            }, delay)
+            delay += 3000L
+        }
+        // Вернуть лаунчер на экран, когда всё запущено.
+        mainHandler.postDelayed({
+            try {
+                startActivity(
+                    Intent(this, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                )
+            } catch (e: Throwable) {
+            }
+        }, delay)
+        return true
     }
 
     override fun onDestroy() {

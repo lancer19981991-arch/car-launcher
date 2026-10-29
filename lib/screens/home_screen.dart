@@ -71,6 +71,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     NativeBridge.ensureIncomingHandler();
     _weather = context.read<WeatherService>()..addListener(_onWeather);
     _init();
+    // Свой автозапуск (TPMS и т.п.) — раз за включение магнитолы.
+    final auto = context.read<SettingsService>().autostartApps;
+    if (auto.isNotEmpty) NativeBridge.runAutostart([for (final (p, _) in auto) p]);
   }
 
   WeatherService? _weather;

@@ -85,6 +85,16 @@ class NativeBridge {
     });
   }
 
+  /// Свой автозапуск: открыть приложения [packages] (раз за включение
+  /// магнитолы; [force] — сейчас, для проверки) и вернуться на экран.
+  static Future<bool> runAutostart(List<String> packages, {bool force = false}) async {
+    try {
+      return await _channel.invokeMethod<bool>('runAutostart', {'packages': packages, 'force': force}) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Включить OBD с адаптером [address] (MAC) или выключить (null).
   static Future<void> obdSetAddress(String? address) async {
     try {

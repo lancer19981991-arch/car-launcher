@@ -37,6 +37,19 @@ class SettingsService extends ChangeNotifier {
   static const _kYandexKey = 'weather_yandex_key';
   static const _kWallpaperKey = 'wallpaper';
   static const _kTpmsMapKey = 'tpms_map';
+  static const _kAutostartKey = 'autostart_apps';
+
+  /// Приложения, которые лаунчер сам запускает после включения магнитолы:
+  /// пары (пакет, название).
+  List<(String, String)> get autostartApps => [
+        for (final e in _prefs.getStringList(_kAutostartKey) ?? const <String>[])
+          if (e.contains('\t')) (e.split('\t').first, e.split('\t').skip(1).join('\t')),
+      ];
+
+  Future<void> setAutostartApps(List<(String, String)> apps) async {
+    await _prefs.setStringList(_kAutostartKey, [for (final (p, l) in apps) '$p\t$l']);
+    notifyListeners();
+  }
   static const _kObdOnKey = 'obd_enabled';
   static const _kObdAddrKey = 'obd_address';
   static const _kObdNameKey = 'obd_name';

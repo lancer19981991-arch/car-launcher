@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/app_info.dart';
 import '../models/weather_place.dart';
 import '../services/native_bridge.dart';
 import '../services/obd_service.dart';
@@ -8,6 +9,7 @@ import '../services/settings_service.dart';
 import '../services/tpms_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/wallpaper_background.dart';
+import 'app_picker_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -207,6 +209,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 24),
+          _SectionLabel('Автозапуск'),
+          const _AutostartSettings(),
           const SizedBox(height: 24),
           _SectionLabel('Приборы (OBD, ELM327)'),
           const _ObdSettings(),
@@ -485,6 +490,67 @@ class _CitySearchDialogState extends State<_CitySearchDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
       ],
+    );
+  }
+}
+
+/// Свой список автозапуска: прошивка пускает в автозагрузку только одно
+/// приложение (лаунчер), остальные запускает он сам.
+class _AutostartSettings extends StatelessWidget {
+  const _AutostartSettings();
+
+  Future<void> _add(BuildContext context) async {
+    final settings = context.read<SettingsService>();
+    final app = await Navigator.of(context).push<AppInfo>(
+      MaterialPageRoute(builder: (_) => const AppPickerScreen(title: 'Автозапуск: выбор приложения')),
+    );
+    if (app == null) return;
+    final list = settings.autostartApps.where((e) => e.$1 != app.packageName).toList()
+      ..add((app.packageName, app.label));
+    await settings.setAutostartApps(list);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsService>();
+    final apps = settings.autostartApps;
+    return Card(
+      child: Column(
+        children: [
+          const ListTile(
+            leading: Icon(Icons.play_circle_outline_rounded),
+            title: Text('Запускать после включения магнитолы'),
+            subtitle: Text('Лаунчер откроет эти приложения (например, TPMS — чтобы '
+                'работали его датчики) и через пару секунд вернётся на главный экран. '
+                'Один раз за включение.'),
+          ),
+          for (final (pkg, label) in apps)
+            ListTile(
+              leading: const Icon(Icons.apps_rounded),
+              title: Text(label),
+              subtitle: Text(pkg),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline_rounded),
+                onPressed: () => settings.setAutostartApps(apps.where((e) => e.$1 != pkg).toList()),
+              ),
+            ),
+          OverflowBar(
+            alignment: MainAxisAlignment.end,
+            children: [
+              if (apps.isNotEmpty)
+                TextButton(
+                  onPressed: () => NativeBridge.runAutostart([for (final (p, _) in apps) p], force: true),
+                  child: const Text('Проверить сейчас'),
+                ),
+              TextButton.icon(
+                onPressed: () => _add(context),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Добавить приложение'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

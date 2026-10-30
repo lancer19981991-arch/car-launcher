@@ -508,7 +508,12 @@ class _AutostartSettings extends StatelessWidget {
     final list = settings.autostartApps.where((e) => e.$1 != app.packageName).toList()
       ..add((app.packageName, app.label));
     await settings.setAutostartApps(list);
+    _sendToNative(list);
   }
+
+  /// Нативная сторона держит список в памяти — обновить после правки.
+  static void _sendToNative(List<(String, String)> apps) =>
+      NativeBridge.runAutostart([for (final (p, _) in apps) p]);
 
   @override
   Widget build(BuildContext context) {
@@ -520,9 +525,9 @@ class _AutostartSettings extends StatelessWidget {
           const ListTile(
             leading: Icon(Icons.play_circle_outline_rounded),
             title: Text('Запускать после включения магнитолы'),
-            subtitle: Text('Лаунчер откроет эти приложения (например, TPMS — чтобы '
-                'работали его датчики) и через пару секунд вернётся на главный экран. '
-                'Один раз за включение.'),
+            subtitle: Text('Если приложение не запущено (после включения, выхода из сна '
+                'или если его закрыла прошивка), лаунчер откроет его — например, TPMS, '
+                'чтобы работали датчики — и через пару секунд вернётся на главный экран.'),
           ),
           for (final (pkg, label) in apps)
             ListTile(
@@ -531,7 +536,11 @@ class _AutostartSettings extends StatelessWidget {
               subtitle: Text(pkg),
               trailing: IconButton(
                 icon: const Icon(Icons.delete_outline_rounded),
-                onPressed: () => settings.setAutostartApps(apps.where((e) => e.$1 != pkg).toList()),
+                onPressed: () {
+                  final rest = apps.where((e) => e.$1 != pkg).toList();
+                  settings.setAutostartApps(rest);
+                  _sendToNative(rest);
+                },
               ),
             ),
           OverflowBar(

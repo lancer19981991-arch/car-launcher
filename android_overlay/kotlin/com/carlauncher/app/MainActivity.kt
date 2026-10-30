@@ -58,6 +58,8 @@ class MainActivity : FlutterActivity() {
         super.onStart()
         widgetSupport.startListening()
         obd.resume()
+        // Лаунчер снова на экране (в т.ч. после сна) — всё ли из автозапуска живо.
+        scheduleAutostartCheck(4000L)
     }
 
     override fun onStop() {
@@ -318,6 +320,7 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         try {
             registerReceiver(tpmsReceiver, IntentFilter("TPMS_APP_STATE_SEND"))
+            registerReceiver(screenOnReceiver, IntentFilter(android.content.Intent.ACTION_SCREEN_ON))
         } catch (e: Throwable) {
             // не критично — без TPMS-данных
         }
@@ -326,19 +329,58 @@ class MainActivity : FlutterActivity() {
     /**
      * Свой автозапуск: прошивка разрешает в автозагрузку только одно
      * приложение (у пользователя это лаунчер), поэтому остальное (TPMS)
-     * запускает лаунчер — один раз за включение. Приложение открывается
-     * (так стартует его фоновая служба), затем лаунчер возвращается на экран.
-     * Возвращает true, если запуск начат.
+     * держит запущенным лаунчер. Проверка — когда лаунчер появляется на
+     * экране и когда включается экран (выход из глубокого сна: магнитола
+     * не перезагружается, а прошивка закрывает приложения). Запускаются
+     * только те, чьего процесса нет. Приложение открывается (так стартует
+     * его фоновая служба), затем лаунчер возвращается на экран.
      */
-    private fun runAutostart(pkgs: List<String>, force: Boolean): Boolean {
-        if (pkgs.isEmpty()) return false
-        // Момент включения (с точностью до минуты) — отличает новую загрузку.
-        val bootMinute = (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 60000
-        val prefs = getSharedPreferences("autostart", MODE_PRIVATE)
-        if (!force && prefs.getLong("boot", -1) == bootMinute) return false
-        prefs.edit().putLong("boot", bootMinute).apply()
+    private var autostartPkgs: List<String> = emptyList()
+    private var lastAutostartRun = -60_000L
 
-        var delay = if (force) 300L else 4000L
+    private val autostartCheck = Runnable {
+        if (autostartPkgs.isEmpty()) return@Runnable
+        // Не чаще раза в 30 с — пока приложение поднимается, не дёргать снова.
+        if (SystemClock.elapsedRealtime() - lastAutostartRun < 30_000L) return@Runnable
+        val running = runningPackages() ?: return@Runnable
+        val missing = autostartPkgs.filter { it !in running }
+        if (missing.isNotEmpty()) launchAndReturn(missing, 300L)
+    }
+
+    private fun scheduleAutostartCheck(delayMs: Long) {
+        mainHandler.removeCallbacks(autostartCheck)
+        if (autostartPkgs.isNotEmpty()) mainHandler.postDelayed(autostartCheck, delayMs)
+    }
+
+    /** Пакеты с живым процессом (системному UID видны все); null — не узнать. */
+    private fun runningPackages(): Set<String>? = try {
+        val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+        am.runningAppProcesses?.flatMap { p -> p.pkgList?.toList() ?: listOf(p.processName) }?.toSet()
+    } catch (e: Throwable) {
+        null
+    }
+
+    private val screenOnReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            scheduleAutostartCheck(5000L)
+        }
+    }
+
+    /** Flutter передаёт список; [force] — открыть всё сейчас («Проверить сейчас»). */
+    private fun runAutostart(pkgs: List<String>, force: Boolean): Boolean {
+        autostartPkgs = pkgs
+        if (pkgs.isEmpty()) return false
+        if (force) {
+            launchAndReturn(pkgs, 300L)
+        } else {
+            scheduleAutostartCheck(4000L)
+        }
+        return true
+    }
+
+    private fun launchAndReturn(pkgs: List<String>, firstDelay: Long) {
+        lastAutostartRun = SystemClock.elapsedRealtime()
+        var delay = firstDelay
         for (pkg in pkgs) {
             mainHandler.postDelayed({
                 try {
@@ -362,12 +404,12 @@ class MainActivity : FlutterActivity() {
             } catch (e: Throwable) {
             }
         }, delay)
-        return true
     }
 
     override fun onDestroy() {
         try {
             unregisterReceiver(tpmsReceiver)
+            unregisterReceiver(screenOnReceiver)
         } catch (e: Throwable) {
         }
         backgroundExecutor.shutdown()

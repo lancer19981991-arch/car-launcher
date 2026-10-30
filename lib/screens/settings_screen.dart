@@ -217,6 +217,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const _ObdSettings(),
           const SizedBox(height: 24),
           _SectionLabel('Шины (TPMS)'),
+          const _TpmsWatchdogSettings(),
+          const SizedBox(height: 8),
           const _TpmsDiagnostics(),
           const SizedBox(height: 24),
           _SectionLabel('Оформление'),
@@ -664,6 +666,145 @@ class _ObdSettings extends StatelessWidget {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Сторож TPMS: перезапуск приложения (и сброс USB-приёмника), когда
+/// данные пропали — TPMS_USB иногда теряет связь с приёмником.
+class _TpmsWatchdogSettings extends StatelessWidget {
+  const _TpmsWatchdogSettings();
+
+  Future<void> _pickApp(BuildContext context) async {
+    final settings = context.read<SettingsService>();
+    final app = await Navigator.of(context).push<AppInfo>(
+      MaterialPageRoute(builder: (_) => const AppPickerScreen(title: 'Какое приложение TPMS перезапускать')),
+    );
+    if (app != null) await settings.setTpmsWatchdogApp(app.packageName, app.label);
+  }
+
+  Future<void> _pickUsb(BuildContext context) async {
+    final settings = context.read<SettingsService>();
+    final devices = await NativeBridge.usbDevices();
+    if (!context.mounted) return;
+    final picked = await showDialog<Map<Object?, Object?>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('USB-приёмник TPMS'),
+        content: SizedBox(
+          width: 420,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text('Выберите приёмник TPMS. Не выбирайте модем, Bluetooth или '
+                    'камеру — их сброс на время отключит их. Если не уверены — '
+                    'вытащите приёмник, откройте список снова и посмотрите, что пропало.'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.block_rounded),
+                title: const Text('Не сбрасывать USB'),
+                onTap: () => Navigator.of(ctx).pop(const {'key': null}),
+              ),
+              for (final d in devices)
+                ListTile(
+                  leading: const Icon(Icons.usb_rounded),
+                  title: Text('${d['name']}'),
+                  subtitle: Text('${d['key']}'),
+                  onTap: () => Navigator.of(ctx).pop(d),
+                ),
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Отмена'))],
+      ),
+    );
+    if (picked == null) return;
+    final key = picked['key'] as String?;
+    await settings.setTpmsWatchdogUsb(key, key == null ? null : '${picked['name']}');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<SettingsService>();
+    var pkg = s.tpmsWatchdogPkg;
+    var label = s.tpmsWatchdogLabel;
+    // По умолчанию — приложение из автозапуска с «tpms» в названии.
+    if (pkg == null) {
+      for (final (p, l) in s.autostartApps) {
+        if ('$p $l'.toLowerCase().contains('tpms')) {
+          pkg = p;
+          label = l;
+          break;
+        }
+      }
+    }
+    return Card(
+      child: Column(
+        children: [
+          SwitchListTile(
+            title: const Text('Перезапускать TPMS, если пропали данные'),
+            subtitle: Text('Если от TPMS нет данных ${s.tpmsWatchdogMinutes} мин, а лаунчер на экране — '
+                'закрыть и снова открыть приложение TPMS.'),
+            value: s.tpmsWatchdogEnabled,
+            onChanged: (v) async {
+              if (v && s.tpmsWatchdogPkg == null) {
+                if (pkg != null) {
+                  await s.setTpmsWatchdogApp(pkg, label ?? pkg);
+                } else {
+                  await _pickApp(context);
+                  if (s.tpmsWatchdogPkg == null) return;
+                }
+              }
+              await s.setTpmsWatchdogEnabled(v);
+            },
+          ),
+          if (s.tpmsWatchdogEnabled) ...[
+            ListTile(
+              leading: const Icon(Icons.apps_rounded),
+              title: Text(label ?? 'Приложение не выбрано'),
+              subtitle: const Text('Приложение TPMS'),
+              trailing: TextButton(onPressed: () => _pickApp(context), child: const Text('Выбрать')),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Text('Ждать: ${s.tpmsWatchdogMinutes} мин'),
+                  Expanded(
+                    child: Slider(
+                      min: 1,
+                      max: 10,
+                      divisions: 9,
+                      value: s.tpmsWatchdogMinutes.clamp(1, 10).toDouble(),
+                      label: '${s.tpmsWatchdogMinutes} мин',
+                      onChanged: (v) => s.setTpmsWatchdogMinutes(v.round()),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.usb_rounded),
+              title: Text(s.tpmsWatchdogUsbName ?? 'Не сбрасывать USB'),
+              subtitle: const Text('Сброс USB-приёмника при перезапуске — как вынуть и '
+                  'вставить его (эксперимент)'),
+              trailing: TextButton(onPressed: () => _pickUsb(context), child: const Text('Выбрать')),
+            ),
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: NativeBridge.tpmsRestartNow,
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: const Text('Перезапустить сейчас'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

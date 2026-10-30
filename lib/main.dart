@@ -62,7 +62,7 @@ Future<void> _start() async {
 
   final weather = WeatherService(settings);
 
-  final tpms = TpmsService();
+  final tpms = TpmsService(settings);
   final obd = ObdService(settings);
 
   runApp(CarLauncherApp(settings: settings, presets: presets, weather: weather, tpms: tpms, obd: obd));

@@ -60,6 +60,9 @@ class MainActivity : FlutterActivity() {
         obd.resume()
         // Лаунчер снова на экране (в т.ч. после сна) — всё ли из автозапуска живо.
         scheduleAutostartCheck(4000L)
+        launcherVisibleSince = SystemClock.elapsedRealtime()
+        mainHandler.removeCallbacks(tpmsWatchdog)
+        mainHandler.postDelayed(tpmsWatchdog, 20_000L)
     }
 
     override fun onStop() {
@@ -67,6 +70,8 @@ class MainActivity : FlutterActivity() {
         widgetSupport.stopListening()
         // Отпускаем адаптер — им могут пользоваться Car Scanner / CVTz.
         obd.pause()
+        launcherVisibleSince = -1L
+        mainHandler.removeCallbacks(tpmsWatchdog)
     }
 
     @Deprecated("FlutterActivity still routes results here")
@@ -136,6 +141,17 @@ class MainActivity : FlutterActivity() {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "getLastLocation" -> result.success(lastLocation())
                     "getTpmsState" -> result.success(tpmsLast.values.toList())
+                    "tpmsWatchdog" -> {
+                        wdPkg = call.argument<String>("pkg")?.takeIf { it.isNotBlank() }
+                        wdUsb = call.argument<String>("usb")?.takeIf { it.isNotBlank() }
+                        wdThresholdMs = ((call.argument<Int>("minutes") ?: 3).coerceIn(1, 30)) * 60_000L
+                        result.success(null)
+                    }
+                    "tpmsRestartNow" -> {
+                        restartTpms()
+                        result.success(wdPkg != null)
+                    }
+                    "usbDevices" -> result.success(usbDevices())
                     "runAutostart" -> {
                         val pkgs = call.argument<List<String>>("packages") ?: emptyList()
                         val force = call.argument<Boolean>("force") ?: false
@@ -312,6 +328,8 @@ class MainActivity : FlutterActivity() {
             }
             val tire = (m["tires"] as? Number)?.toInt() ?: return
             tpmsLast[tire] = m
+            tpmsLastAt = SystemClock.elapsedRealtime()
+            wdFailedRestarts = 0
             channel?.invokeMethod("onTpms", m)
         }
     }
@@ -363,6 +381,91 @@ class MainActivity : FlutterActivity() {
     private val screenOnReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             scheduleAutostartCheck(5000L)
+        }
+    }
+
+    // ---------- сторож TPMS ----------
+    //
+    // TPMS_USB иногда теряет связь с USB-приёмником или датчиками (пишет
+    // ошибку, помогает перезайти в приложение, а лучше всего — переподключить
+    // приёмник). Если данных нет дольше порога, а лаунчер на экране:
+    // закрыть TPMS, по желанию сбросить USB-приёмник (как вынуть-вставить)
+    // и открыть TPMS заново, вернув лаунчер.
+
+    /** Пакет TPMS-приложения; null — сторож выключен. */
+    private var wdPkg: String? = null
+
+    /** Ключ USB-приёмника «vid:pid» для сброса; null — не сбрасывать. */
+    private var wdUsb: String? = null
+    private var wdThresholdMs = 3 * 60_000L
+    private var tpmsLastAt = 0L
+    private var lastTpmsRestart = -3_600_000L
+    private var launcherVisibleSince = -1L
+    private var wdFailedRestarts = 0
+
+    private val tpmsWatchdog: Runnable = Runnable {
+        mainHandler.postDelayed(tpmsWatchdog, 20_000L)
+        if (wdPkg == null || launcherVisibleSince < 0) return@Runnable
+        val now = SystemClock.elapsedRealtime()
+        // Отсчёт — от последних данных, перезапуска или появления лаунчера
+        // (после сна приложению надо дать время подняться).
+        val since = maxOf(tpmsLastAt, lastTpmsRestart, launcherVisibleSince)
+        // Если перезапуски подряд не помогают (например, машина стоит и
+        // датчики спят) — ждать дольше: 3 → 6 → 12 … до 30 мин.
+        val wait = (wdThresholdMs shl minOf(wdFailedRestarts, 4)).coerceAtMost(30 * 60_000L)
+        if (now - since > wait) {
+            if (lastTpmsRestart > tpmsLastAt) wdFailedRestarts++
+            restartTpms()
+        }
+    }
+
+    private fun restartTpms() {
+        val pkg = wdPkg ?: return
+        lastTpmsRestart = SystemClock.elapsedRealtime()
+        try {
+            val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+            am.javaClass.getMethod("forceStopPackage", String::class.java).invoke(am, pkg)
+        } catch (e: Throwable) {
+        }
+        wdUsb?.let { resetUsb(it) }
+        // Дать приёмнику переподключиться, затем открыть TPMS и вернуться.
+        mainHandler.postDelayed({ launchAndReturn(listOf(pkg), 0L) }, 3000L)
+    }
+
+    private fun usbKey(d: android.hardware.usb.UsbDevice) =
+        String.format("%04x:%04x", d.vendorId, d.productId)
+
+    /** USB-устройства — для выбора приёмника TPMS в настройках. */
+    private fun usbDevices(): List<Map<String, String>> = try {
+        val um = getSystemService(USB_SERVICE) as android.hardware.usb.UsbManager
+        um.deviceList.values.map { d ->
+            val name = try {
+                listOfNotNull(d.manufacturerName, d.productName).joinToString(" ").ifBlank { d.deviceName }
+            } catch (e: Throwable) {
+                d.deviceName
+            }
+            mapOf("key" to usbKey(d), "name" to name)
+        }
+    } catch (e: Throwable) {
+        emptyList()
+    }
+
+    /** Программный «вынуть-вставить»: сброс порта USB (скрытый API, системный UID). */
+    private fun resetUsb(key: String) {
+        try {
+            val um = getSystemService(USB_SERVICE) as android.hardware.usb.UsbManager
+            val dev = um.deviceList.values.firstOrNull { usbKey(it) == key } ?: return
+            try {
+                um.javaClass.getMethod("grantPermission", android.hardware.usb.UsbDevice::class.java).invoke(um, dev)
+            } catch (e: Throwable) {
+            }
+            val conn = um.openDevice(dev) ?: return
+            try {
+                conn.javaClass.getMethod("resetDevice").invoke(conn)
+            } finally {
+                conn.close()
+            }
+        } catch (e: Throwable) {
         }
     }
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'native_bridge.dart';
+import 'settings_service.dart';
 
 /// Пакет-«пустышка»: в окне не приложение, а встроенная панель шин.
 const String kTpmsPanel = '@tpms';
@@ -80,12 +81,29 @@ class TireState {
 
 /// Данные шин, пойманные нативной стороной из broadcast TPMS-приложения.
 class TpmsService extends ChangeNotifier {
-  TpmsService() {
+  TpmsService(this._settings) {
     NativeBridge.onTpms = _onMessage;
     NativeBridge.ensureIncomingHandler();
     _loadCached();
+    _settings.addListener(_sendWatchdog);
+    _sendWatchdog();
     // Раз в 30 с перерисовать «сколько секунд назад» и потерю связи.
     _tick = Timer.periodic(const Duration(seconds: 30), (_) => notifyListeners());
+  }
+
+  final SettingsService _settings;
+  String? _wdSent;
+
+  /// Настройки сторожа — нативной стороне (она и следит, и перезапускает).
+  void _sendWatchdog() {
+    final on = _settings.tpmsWatchdogEnabled && _settings.tpmsWatchdogPkg != null;
+    final pkg = on ? _settings.tpmsWatchdogPkg : null;
+    final usb = on ? _settings.tpmsWatchdogUsb : null;
+    final min = _settings.tpmsWatchdogMinutes;
+    final key = '$pkg|$usb|$min';
+    if (key == _wdSent) return;
+    _wdSent = key;
+    NativeBridge.tpmsWatchdog(pkg: pkg, usb: usb, minutes: min);
   }
 
   final Map<int, TireState> _tires = {};
@@ -131,6 +149,7 @@ class TpmsService extends ChangeNotifier {
   void dispose() {
     _tick?.cancel();
     NativeBridge.onTpms = null;
+    _settings.removeListener(_sendWatchdog);
     super.dispose();
   }
 }

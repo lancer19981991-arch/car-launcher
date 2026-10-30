@@ -95,6 +95,30 @@ class NativeBridge {
     }
   }
 
+  /// Сторож TPMS: перезапускать [pkg], если данных нет [minutes] минут;
+  /// [usb] — ключ «vid:pid» приёмника для программного сброса (или null).
+  static Future<void> tpmsWatchdog({String? pkg, String? usb, int minutes = 3}) async {
+    try {
+      await _channel.invokeMethod('tpmsWatchdog', {'pkg': pkg, 'usb': usb, 'minutes': minutes});
+    } catch (_) {}
+  }
+
+  static Future<void> tpmsRestartNow() async {
+    try {
+      await _channel.invokeMethod('tpmsRestartNow');
+    } catch (_) {}
+  }
+
+  /// USB-устройства: [{key: «vid:pid», name}].
+  static Future<List<Map<Object?, Object?>>> usbDevices() async {
+    try {
+      final raw = await _channel.invokeListMethod<Object?>('usbDevices') ?? const [];
+      return raw.whereType<Map<Object?, Object?>>().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Включить OBD с адаптером [address] (MAC) или выключить (null).
   static Future<void> obdSetAddress(String? address) async {
     try {

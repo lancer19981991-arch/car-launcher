@@ -38,6 +38,49 @@ class SettingsService extends ChangeNotifier {
   static const _kWallpaperKey = 'wallpaper';
   static const _kTpmsMapKey = 'tpms_map';
   static const _kAutostartKey = 'autostart_apps';
+  static const _kWdOnKey = 'tpms_wd_enabled';
+  static const _kWdPkgKey = 'tpms_wd_pkg';
+  static const _kWdLabelKey = 'tpms_wd_label';
+  static const _kWdMinKey = 'tpms_wd_minutes';
+  static const _kWdUsbKey = 'tpms_wd_usb';
+  static const _kWdUsbNameKey = 'tpms_wd_usb_name';
+
+  /// Сторож TPMS: перезапуск приложения, когда пропали данные.
+  bool get tpmsWatchdogEnabled => _prefs.getBool(_kWdOnKey) ?? false;
+  String? get tpmsWatchdogPkg => _prefs.getString(_kWdPkgKey);
+  String? get tpmsWatchdogLabel => _prefs.getString(_kWdLabelKey);
+  int get tpmsWatchdogMinutes => (_prefs.getInt(_kWdMinKey) ?? 3).clamp(1, 30);
+
+  /// USB-приёмник для сброса («vid:pid» и название); null — не сбрасывать.
+  String? get tpmsWatchdogUsb => _prefs.getString(_kWdUsbKey);
+  String? get tpmsWatchdogUsbName => _prefs.getString(_kWdUsbNameKey);
+
+  Future<void> setTpmsWatchdogEnabled(bool v) async {
+    await _prefs.setBool(_kWdOnKey, v);
+    notifyListeners();
+  }
+
+  Future<void> setTpmsWatchdogApp(String pkg, String label) async {
+    await _prefs.setString(_kWdPkgKey, pkg);
+    await _prefs.setString(_kWdLabelKey, label);
+    notifyListeners();
+  }
+
+  Future<void> setTpmsWatchdogMinutes(int m) async {
+    await _prefs.setInt(_kWdMinKey, m.clamp(1, 30));
+    notifyListeners();
+  }
+
+  Future<void> setTpmsWatchdogUsb(String? key, String? name) async {
+    if (key == null) {
+      await _prefs.remove(_kWdUsbKey);
+      await _prefs.remove(_kWdUsbNameKey);
+    } else {
+      await _prefs.setString(_kWdUsbKey, key);
+      await _prefs.setString(_kWdUsbNameKey, name ?? key);
+    }
+    notifyListeners();
+  }
 
   /// Приложения, которые лаунчер сам запускает после включения магнитолы:
   /// пары (пакет, название).

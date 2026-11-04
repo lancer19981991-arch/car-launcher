@@ -10,6 +10,7 @@ import '../services/tpms_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
+import 'obd_stats_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -635,6 +636,16 @@ class _ObdSettings extends StatelessWidget {
                   'Двигатель: ${obd.coolant ?? '—'} °C'),
               subtitle: const Text('Панель в окно: режим правки → ⚙ на окне → «Приборы (OBD)»'),
             ),
+          ListTile(
+            leading: const Icon(Icons.show_chart_rounded),
+            title: const Text('Статистика: графики температур'),
+            subtitle: const Text('Двигатель, вариатор и напряжение по дням — пишется раз в '
+                '10 с, хранится бессрочно. Можно сохранить в CSV.'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ObdStatsScreen()),
+            ),
+          ),
           if (settings.obdEnabled && obd.state == 'connected')
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),

@@ -119,6 +119,25 @@ class NativeBridge {
     }
   }
 
+  /// Папка внутренних файлов лаунчера.
+  static Future<String?> filesDir() async {
+    try {
+      return await _channel.invokeMethod<String>('filesDir');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Скопировать файл в «Загрузки» (Download/CarLauncher). Возвращает,
+  /// куда сохранено, или null.
+  static Future<String?> exportToDownloads(String path, String name) async {
+    try {
+      return await _channel.invokeMethod<String>('exportToDownloads', {'path': path, 'name': name});
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Включить OBD с адаптером [address] (MAC) или выключить (null).
   static Future<void> obdSetAddress(String? address) async {
     try {

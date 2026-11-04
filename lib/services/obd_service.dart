@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'native_bridge.dart';
+import 'obd_log.dart';
 import 'settings_service.dart';
 
 /// Пакет-«пустышка»: в окне встроенная панель приборов OBD.
@@ -19,6 +20,9 @@ class ObdService extends ChangeNotifier {
 
   final SettingsService _settings;
   String? _applied;
+
+  /// Журнал температур (бессрочно, по файлу на день).
+  final ObdLog log = ObdLog();
 
   /// off / connecting / connected / error / paused.
   String state = 'off';
@@ -67,6 +71,9 @@ class ObdService extends ChangeNotifier {
         cvtNote = m['cvtNote'] as String?;
       }
       lastAt = DateTime.now();
+      if (state == 'connected' && coolant != null) {
+        log.maybeAppend(engine: coolant!.toDouble(), cvt: cvtTemp, voltage: voltage);
+      }
     }
     notifyListeners();
   }

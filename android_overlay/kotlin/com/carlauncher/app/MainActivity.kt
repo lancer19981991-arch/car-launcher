@@ -140,6 +140,15 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "getLastLocation" -> result.success(lastLocation())
+                    "filesDir" -> result.success(filesDir.absolutePath)
+                    "exportToDownloads" -> {
+                        val path = call.argument<String>("path") ?: ""
+                        val name = call.argument<String>("name") ?: "car-launcher.csv"
+                        backgroundExecutor.execute {
+                            val r = exportToDownloads(path, name)
+                            mainHandler.post { result.success(r) }
+                        }
+                    }
                     "getTpmsState" -> result.success(tpmsLast.values.toList())
                     "tpmsWatchdog" -> {
                         wdPkg = call.argument<String>("pkg")?.takeIf { it.isNotBlank() }
@@ -382,6 +391,38 @@ class MainActivity : FlutterActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             scheduleAutostartCheck(5000L)
         }
+    }
+
+    /** Копия файла в «Загрузки» → Download/CarLauncher (журнал OBD в CSV). */
+    private fun exportToDownloads(path: String, name: String): String? = try {
+        val src = java.io.File(path)
+        if (!src.exists()) {
+            null
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/csv")
+                put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/CarLauncher")
+            }
+            val uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                null
+            } else {
+                contentResolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
+                "Download/CarLauncher/$name"
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = java.io.File(
+                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+                "CarLauncher",
+            )
+            dir.mkdirs()
+            src.copyTo(java.io.File(dir, name), overwrite = true)
+            "Download/CarLauncher/$name"
+        }
+    } catch (e: Throwable) {
+        null
     }
 
     // ---------- сторож TPMS ----------

@@ -20,6 +20,7 @@ import '../widgets/obd_panel.dart';
 import '../widgets/tpms_panel.dart';
 import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
+import 'obd_stats_screen.dart';
 import 'presets_screen.dart';
 import 'settings_screen.dart';
 import 'widget_picker_screen.dart';
@@ -1034,6 +1035,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ? content
           : tpmsPanel || obdPanel
               ? GestureDetector(
+                  // Нажатие на приборы — графики температур за день.
+                  onTap: obdPanel
+                      ? () => _withWindowsHidden(() => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const ObdStatsScreen()),
+                          ))
+                      : null,
                   onLongPress: () => _withWindowsHidden(() => _pickContent(slot)),
                   child: tpmsPanel ? const TpmsPanel() : const ObdPanel(),
                 )

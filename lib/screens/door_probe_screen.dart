@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -17,6 +18,60 @@ class DoorProbeScreen extends StatefulWidget {
 }
 
 class _DoorProbeScreenState extends State<DoorProbeScreen> {
+  /// Перерисовка раз в полсекунды — чтобы подсветка изменившихся кодов гасла.
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  /// Таблица всех кодов шины: только что изменившиеся горят красным и
+  /// плавно гаснут за 6 секунд — сразу видно, какой код на что реагирует.
+  Widget _codesTable(DoorsService d) {
+    final now = DateTime.now();
+    final codes = d.values.keys.toList()..sort();
+    if (codes.isEmpty) return const Text('Значений пока нет');
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: [
+        for (final c in codes)
+          Builder(builder: (context) {
+            final at = d.changedAt[c];
+            final age = at == null ? 99.0 : now.difference(at).inMilliseconds / 1000;
+            final heat = (1 - age / 6).clamp(0.0, 1.0);
+            final v = d.values[c]!;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: Color.lerp(Colors.white10, const Color(0xFFFF283C), heat),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: at == null ? Colors.white12 : Colors.white38),
+              ),
+              child: Text(
+                '$c: ${v.length == 1 ? v.first : v.join(',')}',
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  fontWeight: heat > 0 ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
   bool _recording = false;
   bool _busy = false;
   String? _report;
@@ -105,6 +160,13 @@ class _DoorProbeScreenState extends State<DoorProbeScreen> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
+            const Text('Все коды (изменившийся горит красным несколько секунд; '
+                'с рамкой — менялись хоть раз):', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            _codesTable(d),
+            const SizedBox(height: 10),
+            const Text('Журнал изменений (новые сверху):', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
             Container(
               height: 220,
               width: double.infinity,
@@ -128,6 +190,7 @@ class _DoorProbeScreenState extends State<DoorProbeScreen> {
                 TextButton(
                   onPressed: () {
                     d.events.clear();
+                    d.changedAt.clear();
                     setState(() {});
                   },
                   child: const Text('Очистить'),

@@ -37,6 +37,9 @@ class DoorsService extends ChangeNotifier {
   /// Журнал сообщений шины (новые в конце) — для разведки.
   final List<({DateTime time, int code, List<int> ints})> events = [];
 
+  /// Когда код менялся последний раз — для подсветки в таблице разведки.
+  final Map<int, DateTime> changedAt = {};
+
   /// Тест анимации без машины: принудительно открытые части.
   final Set<String> simulated = {};
 
@@ -64,6 +67,7 @@ class DoorsService extends ChangeNotifier {
     values[code] = ints;
     if (prev == null || !listEquals(prev, ints)) {
       events.add((time: DateTime.now(), code: code, ints: ints));
+      if (prev != null) changedAt[code] = DateTime.now();
       if (events.length > 500) events.removeRange(0, events.length - 500);
     }
     notifyListeners();

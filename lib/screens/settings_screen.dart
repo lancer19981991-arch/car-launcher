@@ -651,6 +651,21 @@ class _ObdSettings extends StatelessWidget {
               subtitle: const Text('Панель в окно: режим правки → ⚙ на окне → «Приборы (OBD)»'),
             ),
           ListTile(
+            leading: const Icon(Icons.bluetooth_searching_rounded),
+            title: const Text('Перезапустить Bluetooth'),
+            subtitle: const Text('Если адаптер не подключается: Bluetooth магнитолы выключится и '
+                'включится заново. Телефон на это время тоже отключится. Если не помогло — '
+                'адаптер завис сам, его нужно вынуть и вставить.'),
+            trailing: const Icon(Icons.restart_alt_rounded),
+            onTap: settings.obdAddress == null ? null : NativeBridge.obdRestartBluetooth,
+          ),
+          SwitchListTile(
+            title: const Text('Перезапускать Bluetooth автоматически'),
+            subtitle: const Text('Если адаптер не подключился ~минуту подряд. Не чаще раза в 10 минут.'),
+            value: settings.obdAutoBtReset,
+            onChanged: (v) => settings.setObdAutoBtReset(v),
+          ),
+          ListTile(
             leading: const Icon(Icons.show_chart_rounded),
             title: const Text('Статистика: графики температур'),
             subtitle: const Text('Двигатель, вариатор и напряжение по дням — пишется раз в '

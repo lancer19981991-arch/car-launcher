@@ -87,6 +87,11 @@ Flutter SDK нет и скачать его из окружения нельзя
 ключом AOSP `platform.pk8/x509` (из aosp-mirror/platform_build) →
 GitHub Release `build-N` с `car-launcher-build-N.apk`.
 
+**Демо собирается ТОЛЬКО ПО ЗАПРОСУ** (с build-53): перед каждой сборкой
+СПРАШИВАТЬ пользователя, нужна ли демо-версия (его просьба). Если да —
+добавить `[demo]` в сообщение коммита (или ручной запуск с галочкой demo).
+Без этого в релизе только основной APK.
+
 В том же релизе — **демо-сборка** `car-launcher-demo-build-N.apk`
 (шаг «Build demo APK»): без `sharedUserId`, без HOME, applicationId
 `com.carlauncher.app.demo`, подпись AOSP `testkey`. Ставится на любой
@@ -308,6 +313,12 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   молчании возвращает cvtNote «не ответил вовремя», сессию не рвёт.
   Пользователь: CVTz с этим адаптером тоже подключается через раз, «наш
   лаунчер лучше» — значит, проблема в самом дешёвом клоне ELM327.
+  build-53: «Перезапустить Bluetooth» (кнопка в Настройки → Приборы OBD;
+  `ObdClient.restartBluetoothBlocking`: BluetoothAdapter.disable → ждём OFF
+  → enable → ждём ON + 2 с) и переключатель «автоматически»
+  (`obd_auto_bt_reset`, по умолч. выкл.: 4 неудачи подряд ≈ минута, не чаще
+  раза в 10 мин). Адаптер у пользователя иногда зависает сам — тогда
+  помогает только вынуть/вставить.
 - **Журнал и графики OBD** (build-46): `lib/services/obd_log.dart` (`ObdLog`),
   пишет из `ObdService._onUpdate` раз в 10 с, пока state=connected и есть ОЖ:
   `files/obd_log/ГГГГ-ММ-ДД.csv` (`time,engine_c,cvt_c,voltage_v`, time =

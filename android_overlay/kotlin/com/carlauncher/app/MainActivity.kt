@@ -189,6 +189,14 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "obdPairedDevices" -> result.success(obd.pairedDevices())
+                    "obdRestartBluetooth" -> {
+                        obd.restartBluetooth()
+                        result.success(null)
+                    }
+                    "obdAutoBtReset" -> {
+                        obd.autoBtReset = call.argument<Boolean>("enabled") ?: false
+                        result.success(null)
+                    }
                     "requestDefaultLauncher" -> {
                         requestDefaultLauncher()
                         result.success(null)

@@ -40,7 +40,13 @@ class ObdService extends ChangeNotifier {
   bool ecuSilent = false;
   DateTime? lastAt;
 
+  bool? _autoBtSent;
+
   void _apply() {
+    if (_autoBtSent != _settings.obdAutoBtReset) {
+      _autoBtSent = _settings.obdAutoBtReset;
+      NativeBridge.obdAutoBtReset(_autoBtSent!);
+    }
     final addr = _settings.obdEnabled ? _settings.obdAddress : null;
     final key = addr ?? '';
     if (key == _applied) return;

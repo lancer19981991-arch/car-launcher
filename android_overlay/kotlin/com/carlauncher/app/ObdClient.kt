@@ -33,6 +33,9 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
 
     @Volatile private var socket: BluetoothSocket? = null
 
+    /** В этой попытке дошли до «подключено» (для счёта неудач подряд). */
+    @Volatile private var connectedOnce = false
+
     fun setAddress(a: String?) {
         address = a?.takeIf { it.isNotBlank() }
         restart()
@@ -76,7 +79,50 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
 
     private fun alive(my: Int) = my == gen
 
+    /** Сам перезапускать Bluetooth магнитолы, если адаптер долго не подключается. */
+    @Volatile var autoBtReset = false
+    private var lastBtReset = 0L
+
+    /**
+     * Перезапуск Bluetooth магнитолы (выкл → вкл). Помогает, когда зависла
+     * связь на стороне магнитолы; если завис сам адаптер — нужно его
+     * передёрнуть. Телефон на это время тоже отключится. Блокирует поток.
+     */
+    @SuppressLint("MissingPermission")
+    fun restartBluetoothBlocking() {
+        val bt = BluetoothAdapter.getDefaultAdapter() ?: return
+        lastBtReset = android.os.SystemClock.elapsedRealtime()
+        emit("connecting", "Перезапуск Bluetooth магнитолы…")
+        closeSocket()
+        try {
+            @Suppress("DEPRECATION") bt.disable()
+            var t = 0
+            while (bt.state != BluetoothAdapter.STATE_OFF && t < 8000) {
+                Thread.sleep(200); t += 200
+            }
+            Thread.sleep(1000)
+            @Suppress("DEPRECATION") bt.enable()
+            t = 0
+            while (bt.state != BluetoothAdapter.STATE_ON && t < 10000) {
+                Thread.sleep(200); t += 200
+            }
+            Thread.sleep(2000) // стек Bluetooth поднимается не сразу
+        } catch (e: Throwable) {
+            emit("error", "Не удалось перезапустить Bluetooth: ${e.message ?: e}")
+        }
+    }
+
+    /** Кнопка в настройках: перезапуск Bluetooth и новое подключение. */
+    fun restartBluetooth() {
+        stopThread()
+        Thread {
+            restartBluetoothBlocking()
+            restart()
+        }.start()
+    }
+
     private fun run(my: Int, addr: String) {
+        var failures = 0
         while (alive(my)) {
             try {
                 connectAndPoll(my, addr)
@@ -84,6 +130,16 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
                 if (alive(my)) emit("error", e.message ?: e.toString())
             }
             closeSocket()
+            if (!connectedOnce) failures++ else failures = 0
+            connectedOnce = false
+            // ~4 неудачи подряд (около минуты) — перезапустить Bluetooth,
+            // но не чаще раза в 10 минут.
+            if (autoBtReset && failures >= 4 && alive(my) &&
+                android.os.SystemClock.elapsedRealtime() - lastBtReset > 10 * 60_000L
+            ) {
+                failures = 0
+                restartBluetoothBlocking()
+            }
             // Пауза перед новой попыткой (адаптер мог быть занят другим приложением).
             var waited = 0
             while (alive(my) && waited < 3000) {
@@ -129,6 +185,7 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
         for (c in listOf("ATM0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATST32", "ATAL")) io.tryCmd(c)
         io.cmd("ATSP6")
         emit("connected", null)
+        connectedOnce = true
 
         var voltage: Double? = null
         var coolant: Int? = null

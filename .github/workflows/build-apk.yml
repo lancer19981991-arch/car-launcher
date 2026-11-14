@@ -5,7 +5,12 @@ on:
     branches: [ main ]
     # Правка только заметок не должна запускать сборку.
     paths-ignore: [ '**.md' ]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      demo:
+        description: 'Собрать и демо-версию'
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -129,7 +134,10 @@ jobs:
       # applicationId (ставится рядом с основной). Живых окон в ней нет —
       # лаунчер сам переходит в запасной режим. Нужна, чтобы смотреть и
       # править интерфейс без магнитолы.
+      # Демо собирается только по запросу: «[demo]» в сообщении коммита
+      # или галочка при ручном запуске. Пользователю она нужна не всегда.
       - name: Build demo APK (no system rights)
+        if: contains(github.event.head_commit.message, '[demo]') || github.event.inputs.demo == 'true'
         working-directory: build_output
         shell: bash
         run: |
@@ -204,8 +212,14 @@ jobs:
         run: |
           tag="build-${{ github.run_number }}"
           cp "$GITHUB_WORKSPACE/car-launcher-signed.apk" "car-launcher-${tag}.apk"
-          cp "$GITHUB_WORKSPACE/car-launcher-demo.apk" "car-launcher-demo-${tag}.apk"
-          gh release create "$tag" "car-launcher-${tag}.apk" "car-launcher-demo-${tag}.apk" \
+          files=("car-launcher-${tag}.apk")
+          notes="Автоматическая сборка из коммита ${{ github.sha }}. car-launcher-build-N.apk — для магнитолы (подписан платформенным ключом AOSP, системное приложение)."
+          if [ -f "$GITHUB_WORKSPACE/car-launcher-demo.apk" ]; then
+            cp "$GITHUB_WORKSPACE/car-launcher-demo.apk" "car-launcher-demo-${tag}.apk"
+            files+=("car-launcher-demo-${tag}.apk")
+            notes="$notes car-launcher-demo-build-N.apk — демо для любого телефона/эмулятора: без живых окон, не заменяет домашний экран, только посмотреть и настроить интерфейс."
+          fi
+          gh release create "$tag" "${files[@]}" \
             --repo "${{ github.repository }}" \
             --title "Car Launcher build #${{ github.run_number }}" \
-            --notes "Автоматическая сборка из коммита ${{ github.sha }}. car-launcher-build-N.apk — для магнитолы (подписан платформенным ключом AOSP, системное приложение). car-launcher-demo-build-N.apk — демо для любого телефона/эмулятора: без живых окон, не заменяет домашний экран, только посмотреть и настроить интерфейс."
+            --notes "$notes"

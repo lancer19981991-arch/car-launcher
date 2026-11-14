@@ -178,6 +178,20 @@ class NativeBridge {
     } catch (_) {}
   }
 
+  /// Перезапуск Bluetooth магнитолы и новое подключение к адаптеру.
+  static Future<void> obdRestartBluetooth() async {
+    try {
+      await _channel.invokeMethod('obdRestartBluetooth');
+    } catch (_) {}
+  }
+
+  /// Сам перезапускать Bluetooth, если адаптер долго не подключается.
+  static Future<void> obdAutoBtReset(bool enabled) async {
+    try {
+      await _channel.invokeMethod('obdAutoBtReset', {'enabled': enabled});
+    } catch (_) {}
+  }
+
   /// Сопряжённые Bluetooth-устройства: [{name, address}].
   static Future<List<Map<Object?, Object?>>> obdPairedDevices() async {
     try {

@@ -96,6 +96,15 @@ class SettingsService extends ChangeNotifier {
   static const _kObdOnKey = 'obd_enabled';
   static const _kObdAddrKey = 'obd_address';
   static const _kObdNameKey = 'obd_name';
+  static const _kObdAutoBtKey = 'obd_auto_bt_reset';
+
+  /// Сам перезапускать Bluetooth магнитолы, если адаптер долго не подключается.
+  bool get obdAutoBtReset => _prefs.getBool(_kObdAutoBtKey) ?? false;
+
+  Future<void> setObdAutoBtReset(bool v) async {
+    await _prefs.setBool(_kObdAutoBtKey, v);
+    notifyListeners();
+  }
 
   /// Опрашивать OBD-адаптер ELM327.
   bool get obdEnabled => _prefs.getBool(_kObdOnKey) ?? false;

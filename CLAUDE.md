@@ -130,6 +130,10 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   экран. Закреплён диапазон `>=2.4.0 <2.5.0` через `pubspec_overrides.yaml`
   (в `patch_project.py`). Версии 2.4.29 на pub.dev нет. Зависимости
   в pubspec не закреплены — новые версии плагинов могут ломать сборку внезапно.
+- **14.11.2026**: новый Flutter stable — шаблон `flutter create` стал зависеть
+  от пакета `material_ui ^1.1.0`, а он требует `intl ^0.20.2`; наш закреплённый
+  `intl ^0.19.0` ломал `pub get`. Теперь в `pubspec_extra.yaml`
+  `intl: ">=0.19.0 <1.0.0"`.
 - На случай падения в `main.dart` есть экран с текстом ошибки (тёмно-красный)
   и `ErrorWidget.builder` с текстом — пользователь присылает фото, по нему
   видна причина.

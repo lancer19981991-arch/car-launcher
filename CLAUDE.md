@@ -319,6 +319,10 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   (`obd_auto_bt_reset`, по умолч. выкл.: 4 неудачи подряд ≈ минута, не чаще
   раза в 10 мин). Адаптер у пользователя иногда зависает сам — тогда
   помогает только вынуть/вставить.
+  Пользователь (после build-52/53): «способ через другую команду (ATWS) не
+  дал результатов» — адаптер всё равно иногда не подключается. Точный текст
+  статуса и помогает ли кнопка перезапуска Bluetooth — не выяснено, спросить.
+  Рассматривает покупку Vgate iCar Pro (нужна версия Bluetooth 3.0, не BLE).
 - **Журнал и графики OBD** (build-46): `lib/services/obd_log.dart` (`ObdLog`),
   пишет из `ObdService._onUpdate` раз в 10 с, пока state=connected и есть ОЖ:
   `files/obd_log/ГГГГ-ММ-ДД.csv` (`time,engine_c,cvt_c,voltage_v`, time =

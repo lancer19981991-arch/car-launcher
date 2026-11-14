@@ -20,13 +20,22 @@ class TpmsPanel extends StatelessWidget {
     return ColoredBox(color: const Color(0xE6080A0F), child: LayoutBuilder(builder: (context, c) {
       // Всё масштабируется от размера окна.
       final s = (c.biggest.shortestSide / 220).clamp(0.5, 2.5);
+      // Машина пользователя (Teana сверху, перед вверх) с лёгкой подсветкой,
+      // чтобы чёрный кузов читался на тёмном фоне. Высота — почти во всё окно.
+      final carH = (c.maxHeight - 16 * s) * 0.95;
       final car = Container(
-        width: 46 * s,
-        height: 96 * s,
+        height: carH,
+        padding: EdgeInsets.symmetric(horizontal: 4 * s),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18 * s),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 2 * s),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF5A6E8C).withValues(alpha: 0.30),
+              blurRadius: 40 * s,
+              spreadRadius: -4 * s,
+            ),
+          ],
         ),
+        child: Image.asset('assets/car_top.png', height: carH, fit: BoxFit.contain, filterQuality: FilterQuality.medium),
       );
       return Padding(
         padding: EdgeInsets.all(8 * s),

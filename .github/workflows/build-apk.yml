@@ -46,6 +46,9 @@ jobs:
         run: |
           rm -rf build_output/lib
           cp -r lib build_output/lib
+          # Картинки (машина для панели шин и т.п.) — объявлены в pubspec
+          # скриптом patch_project.py.
+          cp -r assets build_output/assets
           # Шаблонный тест flutter create ссылается на класс MyApp из
           # шаблонного lib/, которого у нас нет — он ломает analyze.
           rm -rf build_output/test

@@ -44,6 +44,16 @@ def main() -> None:
              "формат шаблона Flutter мог измениться, добавьте зависимости вручную")
 
     lines[insert_at:insert_at] = extra_lines
+
+    # Картинки из assets/ (копирует workflow) — в секцию верхнего уровня
+    # «flutter:» (не путать с «  flutter:» внутри dependencies).
+    for i, line in enumerate(lines):
+        if line.rstrip() == "flutter:":
+            lines[i + 1:i + 1] = ["  assets:", "    - assets/"]
+            break
+    else:
+        fail("не нашёл секцию 'flutter:' в pubspec.yaml — некуда добавить assets")
+
     pubspec_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"pubspec.yaml: добавлены {len(extra_lines)} строк зависимостей")
 

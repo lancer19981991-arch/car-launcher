@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/doors_service.dart';
 import '../services/settings_service.dart';
 import '../services/tpms_service.dart';
+import 'car_doors_view.dart';
 
 /// Встроенная панель шин: схема машины сверху и четыре колеса вокруг.
 /// Минималистично, в стиле лаунчера; тревога — красным.
@@ -15,6 +17,7 @@ class TpmsPanel extends StatelessWidget {
     final pos = tpms.byPosition(context.watch<SettingsService>().tpmsMap);
     final last = tpms.lastAt;
     final stale = last == null || DateTime.now().difference(last) > const Duration(minutes: 5);
+    final doorLabel = context.watch<DoorsService>().label;
 
     // Свой тёмный фон — панель читается при любой теме и обоях.
     return ColoredBox(color: const Color(0xE6080A0F), child: LayoutBuilder(builder: (context, c) {
@@ -22,21 +25,23 @@ class TpmsPanel extends StatelessWidget {
       final s = (c.biggest.shortestSide / 220).clamp(0.5, 2.5);
       // Машина пользователя (Teana сверху, перед вверх) с лёгкой подсветкой,
       // чтобы чёрный кузов читался на тёмном фоне. Высота — почти во всё окно.
-      final carH = (c.maxHeight - 16 * s) * 0.95;
-      final car = Container(
-        height: carH,
-        padding: EdgeInsets.symmetric(horizontal: 4 * s),
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF5A6E8C).withValues(alpha: 0.30),
-              blurRadius: 40 * s,
-              spreadRadius: -4 * s,
-            ),
-          ],
-        ),
-        child: Image.asset('assets/car_top.png', height: carH, fit: BoxFit.contain, filterQuality: FilterQuality.medium),
-      );
+      // Высота машины — от высоты ряда (под подписью о дверях остаётся место).
+      final car = LayoutBuilder(builder: (context, rc) {
+        final carH = rc.maxHeight * 0.95;
+        return Container(
+          padding: EdgeInsets.symmetric(horizontal: 4 * s),
+          decoration: BoxDecoration(
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF5A6E8C).withValues(alpha: 0.30),
+                blurRadius: 40 * s,
+                spreadRadius: -4 * s,
+              ),
+            ],
+          ),
+          child: CarDoorsView(height: carH),
+        );
+      });
       return Padding(
         padding: EdgeInsets.all(8 * s),
         child: Column(
@@ -50,7 +55,16 @@ class TpmsPanel extends StatelessWidget {
                 ],
               ),
             ),
-            if (stale)
+            if (doorLabel != null)
+              Padding(
+                padding: EdgeInsets.only(top: 4 * s),
+                child: Text(
+                  doorLabel,
+                  style: TextStyle(color: const Color(0xFFFF3C46), fontSize: 13 * s, fontWeight: FontWeight.w700),
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else if (stale)
               Padding(
                 padding: EdgeInsets.only(top: 4 * s),
                 child: Text(

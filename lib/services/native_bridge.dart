@@ -62,6 +62,10 @@ class NativeBridge {
   /// Состояние OBD-адаптера и показания (state, message, voltage, coolant…).
   static void Function(Map<Object?, Object?> data)? onObd;
 
+  /// Сообщение CAN-декодера FYT: {code, ints, flts, strs}.
+  static void Function(Map<Object?, Object?> data)? onCanbus;
+  static void Function(String state)? onCanbusState;
+
   static bool _handlerSet = false;
 
   /// Подписаться на входящие вызовы из нативной стороны (один раз).
@@ -77,6 +81,11 @@ class NativeBridge {
       } else if (call.method == 'onTpms') {
         final data = call.arguments;
         if (data is Map) onTpms?.call(data);
+      } else if (call.method == 'onCanbus') {
+        final data = call.arguments;
+        if (data is Map) onCanbus?.call(data);
+      } else if (call.method == 'onCanbusState') {
+        onCanbusState?.call('${call.arguments}');
       } else if (call.method == 'onObd') {
         final data = call.arguments;
         if (data is Map) onObd?.call(data);
@@ -133,6 +142,15 @@ class NativeBridge {
   static Future<String?> exportToDownloads(String path, String name) async {
     try {
       return await _channel.invokeMethod<String>('exportToDownloads', {'path': path, 'name': name});
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Текущее состояние подключения к шине FYT и последние значения кодов.
+  static Future<Map<Object?, Object?>?> canbusSnapshot() async {
+    try {
+      return await _channel.invokeMapMethod<Object?, Object?>('canbusSnapshot');
     } catch (_) {
       return null;
     }

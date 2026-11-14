@@ -355,6 +355,22 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   сохраняется в Download/CarLauncher/door_report_*.txt. Ждём отчёт от
   пользователя. Запасной путь — опрос BCM 745 и поиск меняющегося байта.
   Car Scanner на двери пользователь ещё не проверял.
+  **Отчёт разведки (14.11.2026):** магнитола `sprd ums512_1h10_Natv`
+  (FYT, UIS7862), Android 10; приложения `com.syu.*` (canbus, ms, carui…).
+  В settings/getprop/logcat про двери НИЧЕГО — данные идут по внутреннему
+  IPC FYT. Сделано (build-50): `FytCanbus.kt` — bind
+  `com.syu.ms/app.ToolkitService`, `IRemoteToolkit` txn1
+  getRemoteModule(7=CANBUS), `IRemoteModule` txn3 register(cb, код, 1)
+  oneway для кодов 0–300, колбэк `IModuleCallback` txn1 update(code, int[],
+  float[], String[]) (дескрипторы `com.syu.ipc.*`; по стороннему разбору
+  github beauahill/ram-phoenix-hu docs/CANBUS-IPC.md — не проверено).
+  В манифесте `<queries><package com.syu.ms/>`. Flutter: `DoorsService`
+  (коды по умолч. 0 капот, 1 ПЛ, 2 ПП, 3 ЗЛ, 4 ЗП, 5 багажник; ≠0 = открыто;
+  журнал событий; тест-симуляция), `lib/widgets/car_doors_view.dart`
+  (реалистичная анимация по одобренному макету) внутри панели шин, подпись
+  красным внизу панели. На экране разведки — живой журнал шины FYT +
+  «Сохранить журнал» (Download/CarLauncher/canbus_log_*.txt) + чипы теста
+  анимации. ЖДЁМ: подключается ли, какие коды меняются при открытии дверей.
   **Анимация дверей — макет одобрен** («для минималистичного стиля то что
   нужно»): поверх фото машины на панели шин створка-полоса цвета кузова с
   бликом отходит на петле у переднего края двери (~42°, ease 0,3 с), проём

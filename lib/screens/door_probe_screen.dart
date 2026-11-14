@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../services/doors_service.dart';
 import '../services/native_bridge.dart';
 
 /// Разведка дверей: запись системных изменений, пока пользователь
@@ -60,6 +62,105 @@ class _DoorProbeScreenState extends State<DoorProbeScreen> {
     }
   }
 
+  Future<void> _saveCanbusLog(DoorsService d) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final dir = await NativeBridge.filesDir();
+    if (dir == null) return;
+    String two(int v) => v.toString().padLeft(2, '0');
+    String t(DateTime x) => '${two(x.hour)}:${two(x.minute)}:${two(x.second)}';
+    final sb = StringBuffer('=== Шина FYT (com.syu.ms, модуль CANBUS) ===\n${d.state}\n\n--- Изменения ---\n');
+    for (final e in d.events) {
+      sb.writeln('${t(e.time)}  код ${e.code} = ${e.ints}');
+    }
+    sb.writeln('\n--- Текущие значения ---');
+    for (final k in d.values.keys.toList()..sort()) {
+      sb.writeln('код $k = ${d.values[k]}');
+    }
+    final now = DateTime.now();
+    final name = 'canbus_log_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}.txt';
+    final f = File('$dir/$name');
+    await f.writeAsString(sb.toString());
+    final saved = await NativeBridge.exportToDownloads(f.path, name);
+    messenger.showSnackBar(SnackBar(content: Text(saved == null ? 'Не удалось сохранить' : 'Сохранено: $saved')));
+  }
+
+  Widget _canbusCard(BuildContext context) {
+    final d = context.watch<DoorsService>();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final recent = d.events.reversed.take(40).toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Шина FYT — живые сообщения', style: TextStyle(fontWeight: FontWeight.w700)),
+            Text(d.state, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            const Text('Откройте дверь и посмотрите, какой код появился сверху списка. '
+                'Затем закройте — код должен смениться обратно. Сохраните журнал и пришлите.'),
+            const SizedBox(height: 8),
+            Text(
+              'Сейчас по кодам: ${[for (final p in DoorsService.parts) '${DoorsService.names[p]} ${d.isOpen(p) ? 'ОТКРЫТ' : '—'}'].join(' · ')}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 220,
+              width: double.infinity,
+              padding: const EdgeInsets.all(8),
+              color: Colors.black26,
+              child: recent.isEmpty
+                  ? const Text('Сообщений пока нет')
+                  : ListView(
+                      children: [
+                        for (final e in recent)
+                          Text(
+                            '${two(e.time.hour)}:${two(e.time.minute)}:${two(e.time.second)}  код ${e.code} = ${e.ints}',
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                          ),
+                      ],
+                    ),
+            ),
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    d.events.clear();
+                    setState(() {});
+                  },
+                  child: const Text('Очистить'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _saveCanbusLog(d),
+                  icon: const Icon(Icons.save_alt_rounded),
+                  label: const Text('Сохранить журнал'),
+                ),
+              ],
+            ),
+            const Divider(),
+            const Text('Тест анимации (без машины)', style: TextStyle(fontWeight: FontWeight.w700)),
+            const Text('Нажмите — на панели шин эта часть «откроется». Нажмите ещё раз — закроется.'),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                for (final p in DoorsService.parts)
+                  FilterChip(
+                    label: Text(DoorsService.names[p]!),
+                    selected: d.simulated.contains(p),
+                    onSelected: (_) => d.toggleSimulated(p),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -67,6 +168,10 @@ class _DoorProbeScreenState extends State<DoorProbeScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _canbusCard(context),
+          const SizedBox(height: 16),
+          const Text('Общая запись системы (старый способ)', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
           const Text(
             'Магнитола сама показывает открытые двери — значит, данные о дверях в ней есть. '
             'Этот инструмент записывает, что меняется в системе, пока вы открываете дверь, '

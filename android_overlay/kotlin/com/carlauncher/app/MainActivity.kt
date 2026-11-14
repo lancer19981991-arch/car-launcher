@@ -147,6 +147,12 @@ class MainActivity : FlutterActivity() {
                             mainHandler.post { result.success(null) }
                         }
                     }
+                    "canbusSnapshot" -> result.success(
+                        mapOf(
+                            "state" to canbus.state,
+                            "values" to canbus.last.entries.associate { (k, v) -> k.toString() to v?.toList() },
+                        ),
+                    )
                     "doorProbeStop" -> {
                         backgroundExecutor.execute {
                             val r = doorProbe.stop()
@@ -360,6 +366,7 @@ class MainActivity : FlutterActivity() {
         try {
             registerReceiver(tpmsReceiver, IntentFilter("TPMS_APP_STATE_SEND"))
             registerReceiver(screenOnReceiver, IntentFilter(android.content.Intent.ACTION_SCREEN_ON))
+            canbus.start()
         } catch (e: Throwable) {
             // не критично — без TPMS-данных
         }
@@ -406,6 +413,25 @@ class MainActivity : FlutterActivity() {
     }
 
     private val doorProbe by lazy { DoorProbe(this) }
+
+    /** CAN-декодер магнитолы FYT (двери и т.п.) — сообщения уходят во Flutter. */
+    private val canbus by lazy {
+        FytCanbus(
+            this,
+            onUpdate = { code, ints, flts, strs ->
+                channel?.invokeMethod(
+                    "onCanbus",
+                    mapOf(
+                        "code" to code,
+                        "ints" to ints?.toList(),
+                        "flts" to flts?.map { it.toDouble() },
+                        "strs" to strs?.toList(),
+                    ),
+                )
+            },
+            onState = { s -> channel?.invokeMethod("onCanbusState", s) },
+        )
+    }
 
     /** Копия файла в «Загрузки» → Download/CarLauncher (журнал OBD в CSV). */
     private fun exportToDownloads(path: String, name: String): String? = try {
@@ -571,6 +597,7 @@ class MainActivity : FlutterActivity() {
         try {
             unregisterReceiver(tpmsReceiver)
             unregisterReceiver(screenOnReceiver)
+            canbus.stop()
         } catch (e: Throwable) {
         }
         backgroundExecutor.shutdown()

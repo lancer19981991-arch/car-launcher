@@ -10,6 +10,7 @@ import '../services/tpms_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/wallpaper_background.dart';
 import 'app_picker_screen.dart';
+import 'door_probe_screen.dart';
 import 'obd_stats_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -216,6 +217,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 24),
           _SectionLabel('Приборы (OBD, ELM327)'),
           const _ObdSettings(),
+          const SizedBox(height: 24),
+          _SectionLabel('Двери (эксперимент)'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.sensor_door_outlined),
+              title: const Text('Разведка: откуда брать состояние дверей'),
+              subtitle: const Text('Запись, пока вы открываете дверь; отчёт — в «Загрузки»'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DoorProbeScreen()),
+              ),
+            ),
+          ),
           const SizedBox(height: 24),
           _SectionLabel('Шины (TPMS)'),
           const _TpmsWatchdogSettings(),

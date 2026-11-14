@@ -138,6 +138,21 @@ class NativeBridge {
     }
   }
 
+  /// Разведка дверей: начать запись / остановить и получить отчёт.
+  static Future<void> doorProbeStart() async {
+    try {
+      await _channel.invokeMethod('doorProbeStart');
+    } catch (_) {}
+  }
+
+  static Future<String?> doorProbeStop() async {
+    try {
+      return await _channel.invokeMethod<String>('doorProbeStop');
+    } catch (e) {
+      return 'Ошибка: $e';
+    }
+  }
+
   /// Включить OBD с адаптером [address] (MAC) или выключить (null).
   static Future<void> obdSetAddress(String? address) async {
     try {

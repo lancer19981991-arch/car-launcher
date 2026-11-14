@@ -141,6 +141,18 @@ class MainActivity : FlutterActivity() {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "getLastLocation" -> result.success(lastLocation())
                     "filesDir" -> result.success(filesDir.absolutePath)
+                    "doorProbeStart" -> {
+                        backgroundExecutor.execute {
+                            doorProbe.start()
+                            mainHandler.post { result.success(null) }
+                        }
+                    }
+                    "doorProbeStop" -> {
+                        backgroundExecutor.execute {
+                            val r = doorProbe.stop()
+                            mainHandler.post { result.success(r) }
+                        }
+                    }
                     "exportToDownloads" -> {
                         val path = call.argument<String>("path") ?: ""
                         val name = call.argument<String>("name") ?: "car-launcher.csv"
@@ -393,6 +405,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private val doorProbe by lazy { DoorProbe(this) }
+
     /** Копия файла в «Загрузки» → Download/CarLauncher (журнал OBD в CSV). */
     private fun exportToDownloads(path: String, name: String): String? = try {
         val src = java.io.File(path)
@@ -401,7 +415,10 @@ class MainActivity : FlutterActivity() {
         } else if (Build.VERSION.SDK_INT >= 29) {
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
-                put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/csv")
+                put(
+                    android.provider.MediaStore.Downloads.MIME_TYPE,
+                    if (name.endsWith(".txt")) "text/plain" else "text/csv",
+                )
                 put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/CarLauncher")
             }
             val uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)

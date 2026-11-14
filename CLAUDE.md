@@ -345,6 +345,16 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
 
 ## Открытые вопросы
 
+- **Двери**: пользователь хочет видеть открытые двери. В стандарте OBD их нет;
+  у Nissan их знает BCM (диагностика обычно 745/765). Но МАГНИТОЛА САМА
+  показывает открытые двери (есть CAN-декодер) — сначала ищем, как прошивка
+  отдаёт эти данные. Сделан инструмент `DoorProbe.kt` + экран
+  `lib/screens/door_probe_screen.dart` (Настройки → «Двери (эксперимент)»):
+  снимок settings system/global/secure и getprop до/после, logcat (READ_LOGS)
+  с фильтром door/can/mcu…, активные теги, пакеты похожие на CAN/MCU; отчёт
+  сохраняется в Download/CarLauncher/door_report_*.txt. Ждём отчёт от
+  пользователя. Запасной путь — опрос BCM 745 и поиск меняющегося байта.
+  Car Scanner на двери пользователь ещё не проверял.
 - Пользователь хочет позже попробовать Claude в Android Studio (Otter 3 —
   Claude как модель; Rabbit 2 — Claude Agent через ACP) на ОТДЕЛЬНОМ простом
   проекте. Лаунчер по-прежнему правим здесь и собираем на GitHub.

@@ -168,12 +168,13 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
         // (Teana J32: ISO 15765-4 CAN 11 бит 500k) — ATSP6, без автопоиска.
         // Дешёвые клоны после подключения по Bluetooth и сразу после запуска
         // двигателя (просадка напряжения) отвечают с задержкой или пропускают
-        // ответ на перезагрузку. Поэтому: пауза, «тёплый старт» ATWS (как в
-        // CVTz), при молчании — ATZ, а если и он без ответа — всё равно
-        // продолжаем: многим адаптерам перезагрузка не нужна.
+        // ответ на перезагрузку. Поэтому: пауза, полная перезагрузка ATZ (у
+        // пользователя она «оживляет» адаптер надёжнее, чем тёплый старт
+        // ATWS — проверено на машине), при молчании — ещё раз ATZ, а если и
+        // он без ответа — всё равно продолжаем.
         Thread.sleep(500)
         if (!alive(my)) return
-        if (io.tryCmd("ATWS", 5000) == null) io.tryCmd("ATZ", 6000)
+        if (io.tryCmd("ATZ", 6000) == null) io.tryCmd("ATZ", 6000)
         var echoOff = false
         for (i in 0 until 3) {
             if (io.tryCmd("ATE0", 2500) != null) {
@@ -181,7 +182,7 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
                 break
             }
         }
-        if (!echoOff) throw IOException("Адаптер не отвечает на команды (после ATWS/ATZ/ATE0)")
+        if (!echoOff) throw IOException("Адаптер не отвечает на команды (после ATZ/ATE0)")
         for (c in listOf("ATM0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATST32", "ATAL")) io.tryCmd(c)
         io.cmd("ATSP6")
         emit("connected", null)

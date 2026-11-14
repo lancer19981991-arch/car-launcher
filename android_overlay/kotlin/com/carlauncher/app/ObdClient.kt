@@ -86,7 +86,7 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
             closeSocket()
             // Пауза перед новой попыткой (адаптер мог быть занят другим приложением).
             var waited = 0
-            while (alive(my) && waited < 5000) {
+            while (alive(my) && waited < 3000) {
                 Thread.sleep(200)
                 waited += 200
             }
@@ -110,20 +110,40 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
 
         // Инициализация как в CVTz у пользователя. Протокол машины известен
         // (Teana J32: ISO 15765-4 CAN 11 бит 500k) — ATSP6, без автопоиска.
-        io.cmd("ATZ", 4000)
-        for (c in listOf("ATE0", "ATM0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATST32", "ATAL", "ATSP6")) {
-            io.cmd(c)
+        // Дешёвые клоны после подключения по Bluetooth и сразу после запуска
+        // двигателя (просадка напряжения) отвечают с задержкой или пропускают
+        // ответ на перезагрузку. Поэтому: пауза, «тёплый старт» ATWS (как в
+        // CVTz), при молчании — ATZ, а если и он без ответа — всё равно
+        // продолжаем: многим адаптерам перезагрузка не нужна.
+        Thread.sleep(500)
+        if (!alive(my)) return
+        if (io.tryCmd("ATWS", 5000) == null) io.tryCmd("ATZ", 6000)
+        var echoOff = false
+        for (i in 0 until 3) {
+            if (io.tryCmd("ATE0", 2500) != null) {
+                echoOff = true
+                break
+            }
         }
+        if (!echoOff) throw IOException("Адаптер не отвечает на команды (после ATWS/ATZ/ATE0)")
+        for (c in listOf("ATM0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATST32", "ATAL")) io.tryCmd(c)
+        io.cmd("ATSP6")
         emit("connected", null)
 
         var voltage: Double? = null
         var coolant: Int? = null
         var cvt: CvtReading? = null
         var round = 0
+        var silentRounds = 0
         while (alive(my)) {
-            voltage = parseVoltage(io.cmd("ATRV")) ?: voltage
-            val c = io.cmd("0105", 5000)
-            coolant = parsePid(c, "4105")?.let { it - 40 }
+            // Единичный пропущенный ответ — не повод рвать связь; три круга
+            // подряд без единого ответа — адаптер завис, переподключаемся.
+            val rv = io.tryCmd("ATRV")
+            voltage = rv?.let { parseVoltage(it) } ?: voltage
+            val c = io.tryCmd("0105", 5000)
+            coolant = c?.let { parsePid(it, "4105") }?.let { it - 40 }
+            silentRounds = if (rv == null && c == null) silentRounds + 1 else 0
+            if (silentRounds >= 3) throw IOException("Адаптер перестал отвечать")
             // Вариатор — каждый второй круг (~3 с): запрос длинный.
             if (round % 2 == 0 && coolant != null) cvt = readCvt(io)
             round++
@@ -166,13 +186,15 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
             val ad = bytes.getOrNull(29)
             val temp = ad?.let { cvtTemp(it) }
             return CvtReading(bytes, temp, if (ad == null) "Ответ короче ожидаемого (${bytes.size} байт)" else null)
+        } catch (e: NoAnswer) {
+            return CvtReading(null, null, "Вариатор не ответил вовремя")
         } catch (e: IOException) {
             throw e
         } catch (e: Throwable) {
             return CvtReading(null, null, "Ошибка разбора: ${e.message}")
         } finally {
             // Назад к обычным запросам OBD (функциональный адрес 7DF).
-            for (c in listOf("ATAR", "ATFCSM0", "ATSH7DF")) io.cmd(c)
+            for (c in listOf("ATAR", "ATFCSM0", "ATSH7DF")) io.tryCmd(c)
         }
     }
 
@@ -202,6 +224,9 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
         throw IOException("Не удалось подключиться к адаптеру (занят другим приложением или выключен?): ${last?.message ?: last}")
     }
 
+    /** Адаптер не ответил вовремя (связь при этом жива). */
+    private class NoAnswer(msg: String) : IOException(msg)
+
     /** Обмен командами с ELM327: команда + \r, ответ — до приглашения «>». */
     private class Elm(s: BluetoothSocket) {
         private val input = s.inputStream
@@ -224,7 +249,14 @@ class ObdClient(private val onUpdate: (Map<String, Any?>) -> Unit) {
                     Thread.sleep(10)
                 }
             }
-            throw IOException("Адаптер не ответил на $c")
+            throw NoAnswer("Адаптер не ответил на $c")
+        }
+
+        /** Команда, у которой допустим пропущенный ответ: null вместо ошибки. */
+        fun tryCmd(c: String, timeoutMs: Long = 2500): String? = try {
+            cmd(c, timeoutMs)
+        } catch (e: NoAnswer) {
+            null
         }
     }
 

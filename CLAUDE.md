@@ -306,6 +306,8 @@ gh api repos/lancer19981991-arch/car-launcher/check-runs/$jid/annotations --jq '
   В цикле опроса ATRV/0105 тоже через `tryCmd`; 3 круга подряд без единого
   ответа → «Адаптер перестал отвечать» → переподключение. Вариатор при
   молчании возвращает cvtNote «не ответил вовремя», сессию не рвёт.
+  Пользователь: CVTz с этим адаптером тоже подключается через раз, «наш
+  лаунчер лучше» — значит, проблема в самом дешёвом клоне ELM327.
 - **Журнал и графики OBD** (build-46): `lib/services/obd_log.dart` (`ObdLog`),
   пишет из `ObdService._onUpdate` раз в 10 с, пока state=connected и есть ОЖ:
   `files/obd_log/ГГГГ-ММ-ДД.csv` (`time,engine_c,cvt_c,voltage_v`, time =

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 
 import 'screens/home_screen.dart';
 import 'services/doors_service.dart';
@@ -68,10 +71,10 @@ class CarLauncherApp extends StatelessWidget {
   }
 }
 
-/// Заставка при холодном запуске: та же картинка, что и нативная (фон до
-/// первого кадра Flutter), плавно гаснет через пару секунд. Создаётся один
-/// раз при старте, поэтому при возврате с настроек или из другого приложения
-/// не показывается.
+/// Заставка при холодном запуске: проигрывает assets/splash.mp4 (без звука)
+/// один раз и плавно гаснет по окончании. Если видео не открылось — гаснет
+/// через пару секунд. Создаётся один раз при старте, поэтому при возврате
+/// с настроек или из другого приложения не показывается.
 class _Splash extends StatefulWidget {
   const _Splash({required this.child});
 
@@ -82,18 +85,53 @@ class _Splash extends StatefulWidget {
 }
 
 class _SplashState extends State<_Splash> {
+  VideoPlayerController? _video;
   bool _visible = true;
+  Timer? _fallback;
 
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 1800), () {
-      if (mounted) setState(() => _visible = false);
-    });
+    // Страховка: даже если видео не загрузилось, заставка не висит вечно.
+    _fallback = Timer(const Duration(seconds: 12), _hide);
+    _startVideo();
+  }
+
+  Future<void> _startVideo() async {
+    try {
+      final c = VideoPlayerController.asset('assets/splash.mp4');
+      _video = c;
+      await c.setVolume(0);
+      await c.initialize();
+      if (!mounted) return;
+      c.addListener(() {
+        if (c.value.position >= c.value.duration && c.value.duration > Duration.zero) {
+          _hide();
+        }
+      });
+      setState(() {});
+      await c.play();
+    } catch (_) {
+      // Видео не открылось — просто короткая заставка.
+      _fallback?.cancel();
+      _fallback = Timer(const Duration(milliseconds: 1500), _hide);
+    }
+  }
+
+  void _hide() {
+    if (mounted && _visible) setState(() => _visible = false);
+  }
+
+  @override
+  void dispose() {
+    _fallback?.cancel();
+    _video?.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = _video;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -102,14 +140,16 @@ class _SplashState extends State<_Splash> {
           child: AnimatedOpacity(
             opacity: _visible ? 1 : 0,
             duration: const Duration(milliseconds: 600),
-            child: const ColoredBox(
+            child: ColoredBox(
               color: Colors.black,
-              child: Center(
-                child: Image(
-                  image: AssetImage('assets/car_top.png'),
-                  fit: BoxFit.contain,
-                ),
-              ),
+              child: c != null && c.value.isInitialized
+                  ? Center(
+                      child: AspectRatio(
+                        aspectRatio: c.value.aspectRatio,
+                        child: VideoPlayer(c),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
         ),

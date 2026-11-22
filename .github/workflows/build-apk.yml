@@ -68,6 +68,11 @@ jobs:
           mkdir -p build_output/android/app/src/main/res/xml
           cp android_overlay/res/xml/device_admin_receiver.xml \
              build_output/android/app/src/main/res/xml/device_admin_receiver.xml
+          # Заставка холодного запуска (drawable/drawable-v21/drawable-nodpi).
+          for d in drawable drawable-v21 drawable-nodpi; do
+            mkdir -p build_output/android/app/src/main/res/$d
+            cp -r android_overlay/res/$d/. build_output/android/app/src/main/res/$d/
+          done
 
       - name: Patch pubspec.yaml and Gradle dependencies
         run: python3 scripts/patch_project.py build_output

@@ -60,10 +60,60 @@ class CarLauncherApp extends StatelessWidget {
                 child: child,
               ),
             ),
-            home: const HomeScreen(),
+            home: const _Splash(child: HomeScreen()),
           );
         },
       ),
+    );
+  }
+}
+
+/// Заставка при холодном запуске: та же картинка, что и нативная (фон до
+/// первого кадра Flutter), плавно гаснет через пару секунд. Создаётся один
+/// раз при старте, поэтому при возврате с настроек или из другого приложения
+/// не показывается.
+class _Splash extends StatefulWidget {
+  const _Splash({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_Splash> createState() => _SplashState();
+}
+
+class _SplashState extends State<_Splash> {
+  bool _visible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(milliseconds: 1800), () {
+      if (mounted) setState(() => _visible = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        IgnorePointer(
+          child: AnimatedOpacity(
+            opacity: _visible ? 1 : 0,
+            duration: const Duration(milliseconds: 600),
+            child: const ColoredBox(
+              color: Colors.black,
+              child: Center(
+                child: Image(
+                  image: AssetImage('assets/car_top.png'),
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

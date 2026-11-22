@@ -9,6 +9,7 @@ import '../models/live_windows_status.dart';
 import '../models/preset.dart';
 import '../models/widget_provider.dart';
 import '../models/window_rect.dart';
+import '../services/splash_gate.dart';
 import '../services/native_bridge.dart';
 import '../services/preset_service.dart';
 import '../services/obd_service.dart';
@@ -71,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     NativeBridge.onPillTap = _showMenu;
     NativeBridge.ensureIncomingHandler();
     _weather = context.read<WeatherService>()..addListener(_onWeather);
+    splashGate.addListener(_onSplashGate);
     _init();
     // Свой автозапуск (TPMS и т.п.) — раз за включение магнитолы.
     final auto = context.read<SettingsService>().autostartApps;
@@ -81,6 +83,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _shownWeather;
 
   /// Погода обновилась — перерисовать пилюлю (и нативную тоже).
+  /// Заставка закончилась — теперь можно показать живые окна.
+  void _onSplashGate() {
+    if (!splashGate.value && mounted) _scheduleSync();
+  }
+
   void _onWeather() {
     final t = _weather?.pillText;
     if (t == _shownWeather || !mounted) return;
@@ -94,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     NativeBridge.onWindowLongPress = null;
     NativeBridge.onPillTap = null;
     _weather?.removeListener(_onWeather);
+    splashGate.removeListener(_onSplashGate);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -188,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _syncLiveWindows() async {
     if (!_liveMode || _editing || _menuOpen || !mounted) return;
+    if (splashGate.value) return; // окна покажем после заставки
     final presets = context.read<PresetService>();
     final specs = <AppWindowSpec>[];
     for (final r in _layout) {

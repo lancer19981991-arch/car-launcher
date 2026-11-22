@@ -1,11 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Заставка при холодном запуске (до первого кадра Flutter):
-     чёрный фон и фото машины по центру. -->
+<!-- Фон до первого кадра Flutter при холодном запуске: чистый чёрный,
+     заставка-видео начинается сразу после (см. lib/app.dart). -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/black" />
-    <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@drawable/splash_car" />
-    </item>
 </layer-list>

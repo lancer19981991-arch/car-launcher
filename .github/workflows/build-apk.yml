@@ -68,8 +68,8 @@ jobs:
           mkdir -p build_output/android/app/src/main/res/xml
           cp android_overlay/res/xml/device_admin_receiver.xml \
              build_output/android/app/src/main/res/xml/device_admin_receiver.xml
-          # Заставка холодного запуска (drawable/drawable-v21/drawable-nodpi).
-          for d in drawable drawable-v21 drawable-nodpi; do
+          # Фон холодного запуска (drawable и drawable-v21).
+          for d in drawable drawable-v21; do
             mkdir -p build_output/android/app/src/main/res/$d
             cp -r android_overlay/res/$d/. build_output/android/app/src/main/res/$d/
           done

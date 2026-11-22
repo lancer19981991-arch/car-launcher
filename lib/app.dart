@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
 import 'screens/home_screen.dart';
+import 'services/splash_gate.dart';
 import 'services/doors_service.dart';
 import 'services/obd_service.dart';
 import 'services/preset_service.dart';
@@ -53,17 +54,24 @@ class CarLauncherApp extends StatelessWidget {
             // Запас сверху/снизу применяется ко ВСЕМ экранам сразу:
             // главному, настройкам, выбору приложений, диалогам — чтобы
             // ничего не заходило под системную панель климата магнитолы.
-            builder: (context, child) => ColoredBox(
-              color: Colors.black,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  top: settings.topReserve,
-                  bottom: settings.bottomReserve,
+            // Заставка лежит поверх всего, во весь экран — без запасов.
+            builder: (context, child) => Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(
+                  color: Colors.black,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      top: settings.topReserve,
+                      bottom: settings.bottomReserve,
+                    ),
+                    child: child,
+                  ),
                 ),
-                child: child,
-              ),
+                const _Splash(),
+              ],
             ),
-            home: const _Splash(child: HomeScreen()),
+            home: const HomeScreen(),
           );
         },
       ),
@@ -71,14 +79,11 @@ class CarLauncherApp extends StatelessWidget {
   }
 }
 
-/// Заставка при холодном запуске: проигрывает assets/splash.mp4 (без звука)
-/// один раз и плавно гаснет по окончании. Если видео не открылось — гаснет
-/// через пару секунд. Создаётся один раз при старте, поэтому при возврате
-/// с настроек или из другого приложения не показывается.
+/// Заставка при холодном запуске: assets/splash.mp4 (без звука) один раз на
+/// весь экран, потом плавно гаснет. Пока она на экране, [splashGate] = true,
+/// и живые окна не показываются. Создаётся один раз при старте.
 class _Splash extends StatefulWidget {
-  const _Splash({required this.child});
-
-  final Widget child;
+  const _Splash();
 
   @override
   State<_Splash> createState() => _SplashState();
@@ -87,12 +92,13 @@ class _Splash extends StatefulWidget {
 class _SplashState extends State<_Splash> {
   VideoPlayerController? _video;
   bool _visible = true;
+  bool _finished = false;
   Timer? _fallback;
 
   @override
   void initState() {
     super.initState();
-    // Страховка: даже если видео не загрузилось, заставка не висит вечно.
+    // Страховка: заставка не висит дольше 12 секунд.
     _fallback = Timer(const Duration(seconds: 12), _hide);
     _startVideo();
   }
@@ -105,21 +111,29 @@ class _SplashState extends State<_Splash> {
       await c.initialize();
       if (!mounted) return;
       c.addListener(() {
-        if (c.value.position >= c.value.duration && c.value.duration > Duration.zero) {
+        if (c.value.duration > Duration.zero &&
+            c.value.position >= c.value.duration) {
           _hide();
         }
       });
       setState(() {});
       await c.play();
     } catch (_) {
-      // Видео не открылось — просто короткая заставка.
+      // Видео не открылось — короткая заставка без него.
       _fallback?.cancel();
       _fallback = Timer(const Duration(milliseconds: 1500), _hide);
     }
   }
 
   void _hide() {
-    if (mounted && _visible) setState(() => _visible = false);
+    if (_finished || !mounted) return;
+    _finished = true;
+    _fallback?.cancel();
+    setState(() => _visible = false);
+    // Окна показываем, когда заставка уже погасла (600 мс — как анимация).
+    Future.delayed(const Duration(milliseconds: 650), () {
+      splashGate.value = false;
+    });
   }
 
   @override
@@ -132,28 +146,27 @@ class _SplashState extends State<_Splash> {
   @override
   Widget build(BuildContext context) {
     final c = _video;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        widget.child,
-        IgnorePointer(
-          child: AnimatedOpacity(
-            opacity: _visible ? 1 : 0,
-            duration: const Duration(milliseconds: 600),
-            child: ColoredBox(
-              color: Colors.black,
-              child: c != null && c.value.isInitialized
-                  ? Center(
-                      child: AspectRatio(
-                        aspectRatio: c.value.aspectRatio,
-                        child: VideoPlayer(c),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ),
+    final ready = c != null && c.value.isInitialized;
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: _visible ? 1 : 0,
+        duration: const Duration(milliseconds: 600),
+        child: ColoredBox(
+          color: Colors.black,
+          child: ready
+              ? SizedBox.expand(
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: c.value.size.width,
+                      height: c.value.size.height,
+                      child: VideoPlayer(c),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
-      ],
+      ),
     );
   }
 }

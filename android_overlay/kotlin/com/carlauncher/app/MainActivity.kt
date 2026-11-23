@@ -373,7 +373,10 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         try {
             registerReceiver(tpmsReceiver, IntentFilter("TPMS_APP_STATE_SEND"))
-            registerReceiver(screenOnReceiver, IntentFilter(android.content.Intent.ACTION_SCREEN_ON))
+            registerReceiver(screenOnReceiver, IntentFilter().apply {
+                addAction(android.content.Intent.ACTION_SCREEN_ON)
+                addAction(android.content.Intent.ACTION_SCREEN_OFF)
+            })
             canbus.start()
         } catch (e: Throwable) {
             // не критично — без TPMS-данных
@@ -414,8 +417,22 @@ class MainActivity : FlutterActivity() {
         null
     }
 
+    /** Когда погас экран (0 — не знаем). Нужно, чтобы отличить сон от мигания. */
+    private var screenOffAt = 0L
+
     private val screenOnReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                screenOffAt = android.os.SystemClock.elapsedRealtime()
+                return
+            }
+            // Экран включился. Если он был погашен достаточно долго (сон
+            // магнитолы) или мы этого не знаем — просим Flutter снова
+            // показать заставку: процесс жив, холодного запуска не было.
+            val gap = if (screenOffAt == 0L) Long.MAX_VALUE
+                else android.os.SystemClock.elapsedRealtime() - screenOffAt
+            screenOffAt = 0L
+            if (gap >= 20_000L) channel?.invokeMethod("onWake", null)
             scheduleAutostartCheck(5000L)
         }
     }

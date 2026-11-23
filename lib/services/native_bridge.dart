@@ -66,6 +66,9 @@ class NativeBridge {
   static void Function(Map<Object?, Object?> data)? onCanbus;
   static void Function(String state)? onCanbusState;
 
+  /// Экран включился после сна — снова показать заставку.
+  static void Function()? onWake;
+
   static bool _handlerSet = false;
 
   /// Подписаться на входящие вызовы из нативной стороны (один раз).
@@ -78,6 +81,8 @@ class NativeBridge {
         if (slotId != null) onWindowLongPress?.call(slotId);
       } else if (call.method == 'onPillTap') {
         onPillTap?.call();
+      } else if (call.method == 'onWake') {
+        onWake?.call();
       } else if (call.method == 'onTpms') {
         final data = call.arguments;
         if (data is Map) onTpms?.call(data);

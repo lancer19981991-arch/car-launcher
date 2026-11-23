@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
 import 'screens/home_screen.dart';
+import 'services/native_bridge.dart';
 import 'services/splash_gate.dart';
 import 'services/doors_service.dart';
 import 'services/obd_service.dart';
@@ -100,7 +101,26 @@ class _SplashState extends State<_Splash> {
     super.initState();
     // Страховка: заставка не висит дольше 12 секунд.
     _fallback = Timer(const Duration(seconds: 12), _hide);
+    NativeBridge.ensureIncomingHandler();
+    NativeBridge.onWake = _replay;
     _startVideo();
+  }
+
+  /// Магнитола проснулась (процесс жив) — проигрываем заставку заново.
+  Future<void> _replay() async {
+    final c = _video;
+    if (!mounted || c == null || !c.value.isInitialized) return;
+    splashGate.value = true;
+    _finished = false;
+    _fallback?.cancel();
+    _fallback = Timer(const Duration(seconds: 12), _hide);
+    // Окна, если они ещё видны, прячем на время заставки.
+    try {
+      await NativeBridge.hideAppWindows();
+    } catch (_) {}
+    setState(() => _visible = true);
+    await c.seekTo(Duration.zero);
+    await c.play();
   }
 
   Future<void> _startVideo() async {
@@ -138,6 +158,7 @@ class _SplashState extends State<_Splash> {
 
   @override
   void dispose() {
+    if (NativeBridge.onWake == _replay) NativeBridge.onWake = null;
     _fallback?.cancel();
     _video?.dispose();
     super.dispose();
@@ -150,7 +171,8 @@ class _SplashState extends State<_Splash> {
     return IgnorePointer(
       child: AnimatedOpacity(
         opacity: _visible ? 1 : 0,
-        duration: const Duration(milliseconds: 600),
+        // Появляется быстро (после сна), гаснет плавно.
+        duration: Duration(milliseconds: _visible ? 150 : 600),
         child: ColoredBox(
           color: Colors.black,
           child: ready
